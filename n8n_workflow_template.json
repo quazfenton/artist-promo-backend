@@ -1,0 +1,105 @@
+{
+  "name": "Artist Promo - Playlist Curator Outreach",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger (Weekly Monday 9AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://your-api:8000/webhook/n8n/scrape",
+        "options": {},
+        "bodyParametersJson": "{\n  \"action\": \"scrape_spotify\",\n  \"params\": {\n    \"genre\": \"hip-hop\",\n    \"min_followers\": 1000,\n    \"limit\": 100\n  }\n}"
+      },
+      "name": "Scrape Spotify Playlists",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://your-api:8000/contacts",
+        "options": {
+          "qs": {
+            "parameter": [
+              {
+                "name": "contact_type",
+                "value": "playlist_curator"
+              },
+              {
+                "name": "min_score",
+                "value": "70"
+              },
+              {
+                "name": "limit",
+                "value": "50"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Get High-Priority Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter contacts with valid emails\nreturn items.filter(item => {\n  return item.json.email && item.json.email.includes('@');\n});"
+      },
+      "name": "Filter Valid Emails",
+      "type": "n8n-nodes-base.code",
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "prompt": "=Write a personalized playlist pitch email for curator {{ $json.full_name }} who runs a {{ $json.type }} playlist with {{ $json.followers }} followers. Artist is a hip-hop/rap artist looking for playlist placement. Keep it professional and concise (3-4 sentences).",
+        "options": {}
+      },
+      "name": "Generate Personalized Email (OpenAI)",
+      "type": "n8n-nodes-base.openAi",
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-artist-email@domain.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "Hip-Hop Playlist Submission - [Artist Name]",
+        "emailType": "html",
+        "message": "={{ $('Generate Personalized Email (OpenAI)').item.json.message }}"
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (Weekly Monday 9AM)": {
+      "main": [[{"node": "Scrape Spotify Playlists", "type": "main", "index": 0}]]
+    },
+    "Scrape Spotify Playlists": {
+      "main": [[{"node": "Get High-Priority Contacts", "type": "main", "index": 0}]]
+    },
+    "Get High-Priority Contacts": {
+      "main": [[{"node": "Filter Valid Emails", "type": "main", "index": 0}]]
+    },
+    "Filter Valid Emails": {
+      "main": [[{"node": "Generate Personalized Email (OpenAI)", "type": "main", "index": 0}]]
+    },
+    "Generate Personalized Email (OpenAI)": {
+      "main": [[{"node": "Send Email", "type": "main", "index": 0}]]
+    }
+  }
+}
