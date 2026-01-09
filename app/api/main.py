@@ -28,8 +28,10 @@ from app.utils.database import get_active_records, create_indexes_if_not_exist
 from app.services.database_service import DatabaseService
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
-from app.middleware.auth_middleware import get_current_user, verify_api_key
+from app.middleware.auth_middleware import get_current_user, verify_api_key, AuthMiddleware
 from app.api.auth import router as auth_router
+from app.utils.error_handler import setup_error_handling_and_shutdown
+from app.utils.config_validator import validate_startup_config
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -38,6 +40,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Setup error handling and graceful shutdown
+setup_error_handling_and_shutdown(app)
+
+# Validate configuration at startup
+validate_startup_config()
+
 # Add monitoring middleware
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
@@ -45,7 +53,9 @@ from app.middleware.performance import PerformanceMiddleware
 from app.monitoring.logging import LoggingMiddleware
 from app.monitoring.metrics import MetricsMiddleware, metrics_endpoint
 from app.monitoring.health_checks import router as health_router
+from app.middleware.auth_middleware import AuthMiddleware
 
+app.add_middleware(AuthMiddleware)  # Add auth middleware first
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(PerformanceMiddleware, slow_request_threshold=1.0)
 app.add_middleware(LoggingMiddleware)
@@ -524,17 +534,19 @@ async def n8n_export_webhook(
 def save_spotify_results(results: List[Dict], db: Session):
     """Save Spotify scraper results to database"""
     scorer = PlaylistScorer()
-    
+    successful_saves = 0
+    failed_saves = 0
+
     for result in results:
         try:
             # Check if playlist already exists
             existing = db.query(Playlist).filter(
                 Playlist.platform_id == result.get('platform_id')
             ).first()
-            
+
             if existing:
                 continue
-            
+
             # Create playlist record
             playlist = Playlist(
                 platform_id=result.get('platform_id'),
@@ -553,16 +565,16 @@ def save_spotify_results(results: List[Dict], db: Session):
                     genres=None
                 )
             )
-            
+
             db.add(playlist)
-            
+
             # Create or update curator contact
             curator_profile = result.get('curator_profile')
             if curator_profile:
                 contact = db.query(Contact).filter(
                     Contact.username == curator_profile.get('username')
                 ).first()
-                
+
                 if not contact:
                     contact = Contact(
                         username=curator_profile.get('username'),
@@ -572,35 +584,48 @@ def save_spotify_results(results: List[Dict], db: Session):
                         source_url=curator_profile.get('profile_url'),
                         follower_count=curator_profile.get('follower_count', 0)
                     )
-                    
+
                     db.add(contact)
-            
-            db.commit()
+
+            db.flush()  # Get IDs without committing the full transaction
+            successful_saves += 1
             logger.info(f"Saved playlist: {result.get('name')}")
-        
+
         except Exception as e:
             logger.error(f"Error saving Spotify result: {str(e)}")
-            db.rollback()
+            failed_saves += 1
+            # Don't rollback the entire transaction, just skip this item
+            db.rollback()  # Rollback just this item's changes
+
+    # Commit all changes at the end
+    try:
+        db.commit()
+        logger.info(f"Successfully saved {successful_saves} playlists, {failed_saves} failed")
+    except Exception as e:
+        logger.error(f"Error committing transaction: {str(e)}")
+        db.rollback()
 
 
 def save_youtube_results(results: List[Dict], db: Session):
     """Save YouTube scraper results"""
     scorer = ContactScorer()
-    
+    successful_saves = 0
+    failed_saves = 0
+
     for result in results:
         try:
             # Check if contact exists
             existing = db.query(Contact).filter(
                 Contact.source_url == result.get('channel_url')
             ).first()
-            
+
             if existing:
                 continue
-            
+
             # Get primary email
             emails = result.get('emails', [])
             primary_email = emails[0] if emails else None
-            
+
             contact = Contact(
                 full_name=result.get('channel_name'),
                 username=result.get('channel_id'),
@@ -615,33 +640,45 @@ def save_youtube_results(results: List[Dict], db: Session):
                     contact_type="playlist_curator"
                 )
             )
-            
+
             db.add(contact)
-            db.commit()
+            db.flush()  # Get ID without committing full transaction
+            successful_saves += 1
             logger.info(f"Saved YouTube contact: {result.get('channel_name')}")
-        
+
         except Exception as e:
             logger.error(f"Error saving YouTube result: {str(e)}")
-            db.rollback()
+            failed_saves += 1
+            db.rollback()  # Rollback just this item's changes
+
+    # Commit all changes at the end
+    try:
+        db.commit()
+        logger.info(f"Successfully saved {successful_saves} YouTube contacts, {failed_saves} failed")
+    except Exception as e:
+        logger.error(f"Error committing transaction: {str(e)}")
+        db.rollback()
 
 
 def save_instagram_results(results: List[Dict], db: Session):
     """Save Instagram scraper results"""
     scorer = ContactScorer()
-    
+    successful_saves = 0
+    failed_saves = 0
+
     for result in results:
         try:
             # Check if contact exists
             existing = db.query(Contact).filter(
                 Contact.instagram_handle == result.get('username')
             ).first()
-            
+
             if existing:
                 continue
-            
+
             emails = result.get('emails', [])
             primary_email = emails[0] if emails else result.get('business_email')
-            
+
             contact = Contact(
                 full_name=result.get('full_name'),
                 username=result.get('username'),
@@ -658,33 +695,53 @@ def save_instagram_results(results: List[Dict], db: Session):
                     contact_type="influencer"
                 )
             )
-            
+
             db.add(contact)
-            db.commit()
+            db.flush()  # Get ID without committing full transaction
+            successful_saves += 1
             logger.info(f"Saved Instagram contact: @{result.get('username')}")
-        
+
         except Exception as e:
             logger.error(f"Error saving Instagram result: {str(e)}")
-            db.rollback()
+            failed_saves += 1
+            db.rollback()  # Rollback just this item's changes
+
+    # Commit all changes at the end
+    try:
+        db.commit()
+        logger.info(f"Successfully saved {successful_saves} Instagram contacts, {failed_saves} failed")
+    except Exception as e:
+        logger.error(f"Error committing transaction: {str(e)}")
+        db.rollback()
 
 
 def save_web_result(result: Dict, db: Session):
     """Save web scraper results"""
     try:
         emails = result.get('emails', [])
-        
+        successful_saves = 0
+        failed_saves = 0
+
         for email in emails:
-            existing = db.query(Contact).filter(Contact.email == email).first()
-            if not existing:
-                contact = Contact(
-                    email=email,
-                    website=result.get('url'),
-                    source_url=result.get('url'),
-                    contact_type=ContactType.PUBLICIST,  # Default, can be refined
-                )
-                db.add(contact)
-        
+            try:
+                existing = db.query(Contact).filter(Contact.email == email).first()
+                if not existing:
+                    contact = Contact(
+                        email=email,
+                        website=result.get('url'),
+                        source_url=result.get('url'),
+                        contact_type=ContactType.PUBLICIST,  # Default, can be refined
+                    )
+                    db.add(contact)
+                    successful_saves += 1
+            except Exception as email_error:
+                logger.error(f"Error saving email {email}: {str(email_error)}")
+                failed_saves += 1
+                # Continue with other emails even if one fails
+
+        db.flush()  # Flush all additions
         db.commit()
+        logger.info(f"Successfully saved {successful_saves} web contacts, {failed_saves} failed")
     except Exception as e:
         logger.error(f"Error saving web result: {str(e)}")
         db.rollback()

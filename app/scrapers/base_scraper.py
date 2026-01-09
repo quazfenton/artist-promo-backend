@@ -1,306 +1,374 @@
-"""
-Base scraper class with enhanced reliability and anti-bot measures
-"""
-from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
-from datetime import datetime
-from loguru import logger
-import time
-import random
+"""Enhanced base scraper with circuit breaker, retry logic, and comprehensive error handling"""
 import asyncio
 import aiohttp
-from tenacity import retry, stop_after_attempt, wait_exponential
+import random
+import time
+from abc import ABC, abstractmethod
+from typing import List, Dict, Optional, Any, Union
+from urllib.parse import urlparse
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
-from bs4 import BeautifulSoup
-import re
+from contextlib import asynccontextmanager
+import json
 
-class ProxyManager:
-    """Manage proxy rotation"""
-    
-    def __init__(self):
-        self.proxies = self._load_proxies()
-        self.current_index = 0
-    
-    def _load_proxies(self) -> List[str]:
-        """Load proxy list from environment or file"""
-        import os
-        proxy_list = os.getenv("PROXY_LIST", "").split(",")
-        return [p.strip() for p in proxy_list if p.strip()]
-    
-    def get_proxy(self) -> Optional[str]:
-        """Get next proxy in rotation"""
-        if not self.proxies:
-            return None
-        
-        proxy = self.proxies[self.current_index]
-        self.current_index = (self.current_index + 1) % len(self.proxies)
-        return proxy
+from app.utils.circuit_breaker import CircuitBreaker, async_circuit_breaker
+from app.utils.proxy_manager import ProxyManager
+from app.utils.rate_limiter import AsyncRateLimiter
+from app.utils.error_handler import handle_external_api_error
 
-class UserAgentRotator:
-    """Rotate user agents to avoid detection"""
-    
-    def __init__(self):
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        ]
-    
-    def get_random_user_agent(self) -> str:
-        """Get random user agent"""
-        return random.choice(self.user_agents)
+logger = logging.getLogger(__name__)
 
-class RateLimiter:
-    """Rate limiting for requests"""
-    
-    def __init__(self, requests_per_second: float = 2.0):
-        self.requests_per_second = requests_per_second
-        self.last_request_time = 0
-    
-    async def wait(self):
-        """Wait if necessary to respect rate limit"""
-        current_time = time.time()
-        time_since_last = current_time - self.last_request_time
-        min_interval = 1.0 / self.requests_per_second
-        
-        if time_since_last < min_interval:
-            wait_time = min_interval - time_since_last
-            await asyncio.sleep(wait_time)
-        
-        self.last_request_time = time.time()
+class ScraperError(Exception):
+    """Custom exception for scraper errors"""
+    pass
 
 class BaseScraper(ABC):
-    """Enhanced base class for all scrapers"""
-    
-    def __init__(self, name: str):
+    def __init__(self, name: str, base_delay: float = 1.0, max_delay: float = 10.0, max_retries: int = 5):
         self.name = name
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.max_retries = max_retries
+        self.session = None
         self.proxy_manager = ProxyManager()
-        self.user_agent_rotator = UserAgentRotator()
-        self.rate_limiter = RateLimiter()
+        self.rate_limiter = AsyncRateLimiter(max_calls=10, time_window=60)  # 10 calls per minute
         self.results = []
         self.errors = []
-        self.session = None
-    
-    @abstractmethod
-    def scrape(self, *args, **kwargs) -> List[Dict]:
-        """Main scraping method - must be implemented by subclasses"""
-        pass
-    
-    async def __aenter__(self):
-        """Async context manager entry"""
-        self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            connector=aiohttp.TCPConnector(limit=10)
+        self.stats = {
+            "requests_made": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "blocked_requests": 0,
+            "rate_limited": 0
+        }
+
+        # Initialize circuit breaker for this scraper
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            timeout=60,
+            expected_exception=Exception,
+            name=f"{name}_scraper"
         )
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
+
+    async def initialize_session(self):
+        """Initialize HTTP session with proper headers and timeout"""
+        if self.session is None:
+            timeout = aiohttp.ClientTimeout(total=30)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+        return self.session
+
+    def get_random_headers(self) -> Dict[str, str]:
+        """Generate random browser-like headers to avoid detection"""
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/121.0"
+        ]
+
+        accept_languages = [
+            "en-US,en;q=0.9",
+            "en-GB,en;q=0.8",
+            "en-CA,en;q=0.7",
+            "en-AU,en;q=0.6"
+        ]
+
+        return {
+            "User-Agent": random.choice(user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": random.choice(accept_languages),
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
+            "DNT": "1"  # Do not track
+        }
+
+    async def fetch_page_async(self, url: str, use_proxy: bool = True, timeout: int = 30) -> Optional[str]:
+        """Fetch a page with comprehensive retry logic, circuit breaker, and error handling"""
+        await self.initialize_session()
+
+        # Apply rate limiting
+        await self.rate_limiter.acquire()
+        self.stats["requests_made"] += 1
+
+        # Get proxy if needed
+        proxy = None
+        if use_proxy:
+            proxy = await self.proxy_manager.get_proxy()
+
+        headers = self.get_random_headers()
+
+        # Try multiple times with different strategies
+        for attempt in range(self.max_retries):
+            try:
+                async with self.session.get(url, headers=headers, proxy=proxy, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+                    if response.status == 200:
+                        content = await response.text()
+                        self.stats["successful_requests"] += 1
+                        logger.info(f"Successfully fetched {url} (attempt {attempt + 1})")
+                        return content
+                    elif response.status == 429:
+                        # Too many requests - rate limited
+                        self.stats["rate_limited"] += 1
+                        logger.warning(f"Rate limited for {url} (attempt {attempt + 1}), waiting...")
+
+                        # Exponential backoff with jitter
+                        wait_time = min(2 ** attempt * 5 + random.uniform(1, 3), 60)
+                        await asyncio.sleep(wait_time)
+
+                        # Rotate proxy for next attempt
+                        if use_proxy:
+                            proxy = await self.proxy_manager.get_proxy()
+
+                        continue
+                    elif response.status in [403, 404, 401]:
+                        # Access denied, not found, or unauthorized
+                        self.stats["blocked_requests"] += 1
+                        logger.warning(f"Access denied ({response.status}) for {url}")
+                        return None
+                    elif response.status >= 500:
+                        # Server error - might be temporary
+                        self.stats["failed_requests"] += 1
+                        logger.warning(f"Server error ({response.status}) for {url}, attempt {attempt + 1}")
+
+                        # Exponential backoff for server errors
+                        wait_time = min(2 ** attempt * 2, 30)
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        # Other HTTP errors
+                        self.stats["failed_requests"] += 1
+                        logger.error(f"HTTP {response.status} for {url}")
+                        return None
+
+            except asyncio.TimeoutError:
+                self.stats["failed_requests"] += 1
+                logger.warning(f"Timeout fetching {url} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Exponential backoff for timeouts
+                    wait_time = min(2 ** attempt * 3, 30)
+                    await asyncio.sleep(wait_time)
+                continue
+            except aiohttp.ClientConnectorError as e:
+                self.stats["failed_requests"] += 1
+                logger.warning(f"Connection error for {url}: {str(e)} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Rotate proxy and wait
+                    if use_proxy:
+                        proxy = await self.proxy_manager.get_proxy()
+                    wait_time = min(2 ** attempt * 2, 15)
+                    await asyncio.sleep(wait_time)
+                continue
+            except Exception as e:
+                self.stats["failed_requests"] += 1
+                logger.error(f"Unexpected error fetching {url}: {str(e)} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Wait before retrying
+                    wait_time = min(2 ** attempt * 2, 10)
+                    await asyncio.sleep(wait_time)
+                continue
+
+        # All retries exhausted
+        logger.error(f"All retries failed for {url}")
+        return None
+
+    def fetch_page_sync(self, url: str, use_proxy: bool = True, timeout: int = 30) -> Optional[str]:
+        """Sync version of fetch_page with comprehensive error handling"""
+        # Apply rate limiting (sync version)
+        time.sleep(0.1)  # Simple rate limiting for sync calls
+        self.stats["requests_made"] += 1
+
+        # Get proxy if needed
+        proxy = None
+        if use_proxy:
+            proxy = self.proxy_manager.get_proxy_sync()
+
+        headers = self.get_random_headers()
+
+        # Try multiple times with different strategies
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.get(url, headers=headers, proxies=proxy, timeout=timeout)
+                if response.status_code == 200:
+                    self.stats["successful_requests"] += 1
+                    logger.info(f"Successfully fetched {url} (attempt {attempt + 1})")
+                    return response.text
+                elif response.status_code == 429:
+                    # Rate limited
+                    self.stats["rate_limited"] += 1
+                    logger.warning(f"Rate limited for {url} (attempt {attempt + 1}), waiting...")
+
+                    # Exponential backoff with jitter
+                    wait_time = min(2 ** attempt * 5 + random.uniform(1, 3), 60)
+                    time.sleep(wait_time)
+
+                    # Rotate proxy for next attempt
+                    if use_proxy:
+                        proxy = self.proxy_manager.get_proxy_sync()
+
+                    continue
+                elif response.status_code in [403, 404, 401]:
+                    # Access denied, not found, or unauthorized
+                    self.stats["blocked_requests"] += 1
+                    logger.warning(f"Access denied ({response.status_code}) for {url}")
+                    return None
+                elif response.status_code >= 500:
+                    # Server error - might be temporary
+                    self.stats["failed_requests"] += 1
+                    logger.warning(f"Server error ({response.status_code}) for {url}, attempt {attempt + 1}")
+
+                    # Exponential backoff for server errors
+                    wait_time = min(2 ** attempt * 2, 30)
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Other HTTP errors
+                    self.stats["failed_requests"] += 1
+                    logger.error(f"HTTP {response.status_code} for {url}")
+                    return None
+
+            except requests.exceptions.Timeout:
+                self.stats["failed_requests"] += 1
+                logger.warning(f"Timeout fetching {url} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Exponential backoff for timeouts
+                    wait_time = min(2 ** attempt * 3, 30)
+                    time.sleep(wait_time)
+                continue
+            except requests.exceptions.ConnectionError as e:
+                self.stats["failed_requests"] += 1
+                logger.warning(f"Connection error for {url}: {str(e)} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Rotate proxy and wait
+                    if use_proxy:
+                        proxy = self.proxy_manager.get_proxy_sync()
+                    wait_time = min(2 ** attempt * 2, 15)
+                    time.sleep(wait_time)
+                continue
+            except Exception as e:
+                self.stats["failed_requests"] += 1
+                logger.error(f"Unexpected error fetching {url}: {str(e)} (attempt {attempt + 1})")
+
+                if attempt < self.max_retries - 1:
+                    # Wait before retrying
+                    wait_time = min(2 ** attempt * 2, 10)
+                    time.sleep(wait_time)
+                continue
+
+        # All retries exhausted
+        logger.error(f"All retries failed for {url}")
+        return None
+
+    async def exponential_backoff(self, attempt: int):
+        """Wait with exponential backoff"""
+        delay = min(self.base_delay * (2 ** attempt) + random.uniform(0, 1), self.max_delay)
+        logger.info(f"Attempt {attempt + 1}, waiting {delay:.2f} seconds...")
+        await asyncio.sleep(delay)
+
+    def is_valid_url(self, url: str) -> bool:
+        """Validate URL format"""
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except Exception:
+            return False
+
+    def validate_response(self, content: str, url: str) -> bool:
+        """Validate response content"""
+        if not content:
+            return False
+
+        # Check for common anti-bot responses
+        content_lower = content.lower()
+        if any(indicator in content_lower for indicator in [
+            "access denied", "bot detected", "captcha", "please enable javascript",
+            "blocked", "forbidden", "unavailable", "checking your browser"
+        ]):
+            logger.warning(f"Anti-bot response detected for {url}")
+            return False
+
+        return True
+
+    @abstractmethod
+    async def scrape(self, **kwargs) -> List[Dict[str, Any]]:
+        """Abstract method to be implemented by subclasses"""
+        pass
+
+    async def cleanup(self):
+        """Clean up resources"""
         if self.session:
             await self.session.close()
-    
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
-    async def fetch_page_async(self, url: str, headers: Optional[Dict] = None) -> Optional[str]:
-        """Fetch page with retry logic and anti-bot measures"""
-        
-        await self.rate_limiter.wait()
-        
-        # Prepare headers with random user agent
-        request_headers = {
-            'User-Agent': self.user_agent_rotator.get_random_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-        
-        if headers:
-            request_headers.update(headers)
-        
-        # Get proxy
-        proxy = self.proxy_manager.get_proxy()
-        
-        try:
-            logger.info(f"[{self.name}] Fetching: {url}")
-            
-            async with self.session.get(
-                url, 
-                headers=request_headers,
-                proxy=proxy,
-                ssl=False
-            ) as response:
-                if response.status == 200:
-                    content = await response.text()
-                    # Random delay to appear more human
-                    await asyncio.sleep(random.uniform(0.5, 2.0))
-                    return content
-                elif response.status == 429:
-                    # Rate limited - wait longer
-                    logger.warning(f"[{self.name}] Rate limited on {url}")
-                    await asyncio.sleep(random.uniform(5, 15))
-                    raise Exception(f"Rate limited: {response.status}")
-                else:
-                    raise Exception(f"HTTP {response.status}")
-                    
-        except Exception as e:
-            logger.error(f"[{self.name}] Error fetching {url}: {str(e)}")
-            self.errors.append({"url": url, "error": str(e)})
-            raise
-    
-    def fetch_page_sync(self, url: str, headers: Optional[Dict] = None) -> Optional[requests.Response]:
-        """Synchronous fetch with retry logic"""
-        
-        request_headers = {
-            'User-Agent': self.user_agent_rotator.get_random_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        }
-        
-        if headers:
-            request_headers.update(headers)
-        
-        proxy = self.proxy_manager.get_proxy()
-        proxies = {'http': proxy, 'https': proxy} if proxy else None
-        
-        try:
-            # Rate limiting for sync requests
-            time.sleep(1.0 / self.rate_limiter.requests_per_second)
-            
-            logger.info(f"[{self.name}] Fetching: {url}")
-            response = requests.get(
-                url, 
-                headers=request_headers, 
-                proxies=proxies,
-                timeout=30,
-                verify=False
-            )
-            response.raise_for_status()
-            
-            # Random delay
-            time.sleep(random.uniform(0.5, 2.0))
-            return response
-            
-        except Exception as e:
-            logger.error(f"[{self.name}] Error fetching {url}: {str(e)}")
-            self.errors.append({"url": url, "error": str(e)})
-            raise
-    
-    def parse_html(self, html_content: str) -> BeautifulSoup:
-        """Parse HTML content"""
-        return BeautifulSoup(html_content, 'lxml')
-    
-    def extract_emails(self, text: str) -> List[str]:
-        """Extract email addresses from text"""
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        emails = re.findall(email_pattern, text)
-        
-        # Filter out common false positives
-        filtered_emails = []
-        for email in emails:
-            if not any(skip in email.lower() for skip in ['noreply', 'no-reply', 'example.com', 'test.com']):
-                filtered_emails.append(email)
-        
-        return list(set(filtered_emails))  # Remove duplicates
-    
-    def extract_social_handles(self, text: str, soup: BeautifulSoup) -> Dict[str, str]:
-        """Extract social media handles"""
-        handles = {}
-        
-        # Instagram
-        instagram_pattern = r'@([a-zA-Z0-9._]{1,30})'
-        instagram_matches = re.findall(instagram_pattern, text)
-        if instagram_matches:
-            handles['instagram'] = instagram_matches[0]
-        
-        # Twitter
-        twitter_links = soup.find_all('a', href=re.compile(r'twitter\.com/'))
-        if twitter_links:
-            twitter_url = twitter_links[0]['href']
-            twitter_handle = twitter_url.split('/')[-1]
-            handles['twitter'] = twitter_handle
-        
-        # LinkedIn
-        linkedin_links = soup.find_all('a', href=re.compile(r'linkedin\.com/'))
-        if linkedin_links:
-            handles['linkedin'] = linkedin_links[0]['href']
-        
-        return handles
-    
-    def save_result(self, result: Dict):
-        """Save scraping result"""
-        result['scraped_at'] = datetime.utcnow().isoformat()
-        result['scraper_name'] = self.name
+
+    def add_result(self, result: Dict[str, Any]):
+        """Add a result to the results list"""
         self.results.append(result)
-        logger.debug(f"[{self.name}] Saved result: {result.get('url', 'N/A')}")
-    
-    def get_results(self) -> List[Dict]:
-        """Get all scraping results"""
-        return self.results
-    
-    def get_errors(self) -> List[Dict]:
-        """Get all scraping errors"""
-        return self.errors
-    
-    def get_stats(self) -> Dict:
-        """Get scraping statistics"""
+
+    def add_error(self, error: str, url: str = None, error_type: str = "general"):
+        """Add an error to the errors list"""
+        error_obj = {
+            "timestamp": time.time(),
+            "error": error,
+            "url": url,
+            "error_type": error_type,
+            "attempt_number": len(self.errors) + 1
+        }
+        self.errors.append(error_obj)
+        logger.error(f"Scraper {self.name} error [{error_type}]: {error} for URL: {url}")
+
+    async def get_circuit_breaker_state(self) -> str:
+        """Get current circuit breaker state"""
+        return self.circuit_breaker.state.value
+
+    def reset_circuit_breaker(self):
+        """Reset the circuit breaker"""
+        self.circuit_breaker.reset()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get scraper statistics"""
         return {
-            "scraper_name": self.name,
+            **self.stats,
             "total_results": len(self.results),
             "total_errors": len(self.errors),
-            "success_rate": len(self.results) / (len(self.results) + len(self.errors)) if (len(self.results) + len(self.errors)) > 0 else 0
+            "success_rate": self.stats["successful_requests"] / max(self.stats["requests_made"], 1) * 100
         }
-    
-    def _random_delay(self, min_seconds: float = 0.5, max_seconds: float = 2.0):
-        """Add random delay to appear more human"""
-        delay = random.uniform(min_seconds, max_seconds)
-        time.sleep(delay)
-        """Extract email addresses from text"""
-        import re
-        pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        return list(set(re.findall(pattern, text)))
-    
-    def extract_social_handles(self, soup: BeautifulSoup) -> Dict[str, str]:
-        """Extract social media handles from page"""
-        socials = {}
-        
-        # Instagram
-        instagram_links = soup.find_all('a', href=lambda x: x and 'instagram.com' in x)
-        if instagram_links:
-            socials['instagram'] = instagram_links[0]['href']
-        
-        # Twitter
-        twitter_links = soup.find_all('a', href=lambda x: x and ('twitter.com' in x or 'x.com' in x))
-        if twitter_links:
-            socials['twitter'] = twitter_links[0]['href']
-        
-        # LinkedIn
-        linkedin_links = soup.find_all('a', href=lambda x: x and 'linkedin.com' in x)
-        if linkedin_links:
-            socials['linkedin'] = linkedin_links[0]['href']
-        
-        return socials
-    
-    def _random_delay(self, min_delay: float = 0.5, max_delay: float = 2.0):
-        """Add random delay to avoid rate limiting"""
-        time.sleep(random.uniform(min_delay, max_delay))
-    
-    def save_result(self, result: Dict):
-        """Save a result"""
-        result['scraped_at'] = datetime.utcnow().isoformat()
-        result['scraper_name'] = self.name
-        self.results.append(result)
-    
-    def get_results(self) -> List[Dict]:
-        """Get all results"""
-        return self.results
-    
-    def get_stats(self) -> Dict:
-        """Get scraping statistics"""
-        return {
-            "scraper_name": self.name,
-            "total_results": len(self.results),
-            "total_errors": len(self.errors),
-            "success_rate": len(self.results) / (len(self.results) + len(self.errors)) if (len(self.results) + len(self.errors)) > 0 else 0
+
+    def reset_stats(self):
+        """Reset scraper statistics"""
+        self.stats = {
+            "requests_made": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "blocked_requests": 0,
+            "rate_limited": 0
         }
+        self.results = []
+        self.errors = []
+
+    async def safe_scrape(self, **kwargs) -> List[Dict[str, Any]]:
+        """Safely execute scrape with comprehensive error handling"""
+        try:
+            results = await self.scrape(**kwargs)
+            if results is None:
+                results = []
+            return results
+        except asyncio.CancelledError:
+            # Re-raise cancellation to allow proper task cancellation
+            raise
+        except Exception as e:
+            error_msg = f"Fatal error in scraper {self.name}: {str(e)}"
+            self.add_error(error_msg, error_type="fatal")
+            logger.error(error_msg, exc_info=True)
+            # Don't silently return empty - log that we're returning empty due to error
+            logger.warning(f"Returning empty results for {self.name} due to error")
+            return []  # Return empty list on fatal error

@@ -20,24 +20,40 @@ class HealthChecker:
         """Check database connectivity and performance"""
         try:
             start_time = time.time()
-            engine = create_engine(self.database_url)
-            
+            engine = create_engine(self.database_url, pool_pre_ping=True)  # Enable connection health checks
+
             with engine.connect() as conn:
                 # Test basic connectivity
                 conn.execute(text("SELECT 1"))
-                
+
                 # Test table access
                 result = conn.execute(text("SELECT COUNT(*) FROM contacts WHERE deleted_at IS NULL"))
                 contact_count = result.scalar()
-                
+
+                # Test write operation (in a transaction that we rollback)
+                trans = conn.begin()
+                try:
+                    conn.execute(text("INSERT INTO contacts (full_name, contact_type) VALUES ('Health Check', 'user')"))
+                    conn.execute(text("DELETE FROM contacts WHERE full_name = 'Health Check'"))
+                    trans.rollback()  # Rollback the test transaction
+                except Exception:
+                    if trans:
+                        trans.rollback()
+                    raise
+
                 response_time = (time.time() - start_time) * 1000
-                
+
                 return {
                     "status": "healthy",
                     "response_time_ms": round(response_time, 2),
                     "contact_count": contact_count,
                     "connection_pool_size": engine.pool.size(),
-                    "checked_out_connections": engine.pool.checkedout()
+                    "checked_out_connections": engine.pool.checkedout(),
+                    "pool_status": {
+                        "size": engine.pool.size(),
+                        "checkedout_count": engine.pool.checkedout(),
+                        "overflow": getattr(engine.pool, 'overflow', 'N/A')
+                    }
                 }
         except Exception as e:
             return {
@@ -51,32 +67,55 @@ class HealthChecker:
         try:
             start_time = time.time()
             r = redis.from_url(self.redis_url)
-            
+
             # Test basic connectivity
             r.ping()
-            
-            # Test read/write
-            test_key = "health_check_test"
+
+            # Test read/write with a unique key to avoid conflicts
+            import uuid
+            test_key = f"health_check_test_{uuid.uuid4().hex}"
             r.set(test_key, "test_value", ex=60)
             value = r.get(test_key)
             r.delete(test_key)
-            
+
+            # Verify the value we got back
+            if value != b"test_value":
+                return {
+                    "status": "unhealthy",
+                    "error": "Redis read/write test failed - value mismatch",
+                    "response_time_ms": None
+                }
+
             response_time = (time.time() - start_time) * 1000
-            
+
             # Get Redis info
             info = r.info()
-            
+
             return {
                 "status": "healthy",
                 "response_time_ms": round(response_time, 2),
                 "memory_usage_mb": round(info.get('used_memory', 0) / 1024 / 1024, 2),
                 "connected_clients": info.get('connected_clients', 0),
-                "total_commands_processed": info.get('total_commands_processed', 0)
+                "total_commands_processed": info.get('total_commands_processed', 0),
+                "memory_peak_mb": round(info.get('used_memory_peak', 0) / 1024 / 1024, 2),
+                "evicted_keys": info.get('evicted_keys', 0)
+            }
+        except redis.ConnectionError as e:
+            return {
+                "status": "unhealthy",
+                "error": f"Redis connection error: {str(e)}",
+                "response_time_ms": None
+            }
+        except redis.TimeoutError as e:
+            return {
+                "status": "unhealthy",
+                "error": f"Redis timeout error: {str(e)}",
+                "response_time_ms": None
             }
         except Exception as e:
             return {
                 "status": "unhealthy",
-                "error": str(e),
+                "error": f"Redis error: {str(e)}",
                 "response_time_ms": None
             }
     
