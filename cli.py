@@ -221,31 +221,93 @@ def stats():
     """Show database statistics"""
     try:
         from app.models.database import Contact, Playlist, Venue
-        
+
         db = SessionLocal()
-        
+
         total_contacts = db.query(Contact).count()
         verified_contacts = db.query(Contact).filter(Contact.verified == True).count()
         total_playlists = db.query(Playlist).count()
         total_venues = db.query(Venue).count()
-        
+
         click.echo("\n📊 Database Statistics\n")
         click.echo(f"Total Contacts: {total_contacts}")
         click.echo(f"Verified Contacts: {verified_contacts}")
         click.echo(f"Total Playlists: {total_playlists}")
         click.echo(f"Total Venues: {total_venues}")
-        
+
         # Top curators by score
         top_contacts = db.query(Contact).order_by(Contact.priority_score.desc()).limit(10).all()
-        
+
         click.echo("\n🏆 Top 10 Contacts by Priority Score\n")
         for i, contact in enumerate(top_contacts, 1):
             click.echo(f"{i}. {contact.full_name or contact.username} - Score: {contact.priority_score:.1f} - Followers: {contact.follower_count}")
-        
+
         db.close()
-    
+
     except Exception as e:
         logger.error(f"Stats failed: {str(e)}")
+
+
+@cli.command()
+@click.argument('worker_type', type=click.Choice(['scrape', 'normalize', 'enrich', 'graph', 'outreach']))
+@click.option('--concurrency', default=1, help='Number of concurrent worker processes')
+def start_worker(worker_type, concurrency):
+    """Start a worker process"""
+    click.echo(f"Starting {worker_type} worker with concurrency: {concurrency}")
+
+    if worker_type == "scrape":
+        from app.workers.scrape_worker import ScrapeWorker
+        import asyncio
+
+        async def run_worker():
+            worker = ScrapeWorker()
+            await worker.run()
+
+        asyncio.run(run_worker())
+
+    elif worker_type == "normalize":
+        from app.workers.signal_normalizer_worker import SignalNormalizerWorker
+        import asyncio
+
+        async def run_worker():
+            worker = SignalNormalizerWorker()
+            await worker.run()
+
+        asyncio.run(run_worker())
+
+    elif worker_type == "enrich":
+        from app.workers.entity_resolver_worker import EntityResolverEnrichmentWorker
+        import asyncio
+
+        async def run_worker():
+            worker = EntityResolverEnrichmentWorker()
+            await worker.run()
+
+        asyncio.run(run_worker())
+
+    elif worker_type == "graph":
+        from app.workers.graph_cluster_worker import GraphBuilderClusterWorker
+        import asyncio
+
+        async def run_worker():
+            worker = GraphBuilderClusterWorker()
+            await worker.run()
+
+        asyncio.run(run_worker())
+
+    elif worker_type == "outreach":
+        from app.workers.outreach_worker import OutreachWorker
+        import asyncio
+
+        async def run_worker():
+            worker = OutreachWorker()
+            await worker.run()
+
+        asyncio.run(run_worker())
+
+    else:
+        click.echo(f"Unknown worker type: {worker_type}")
+        click.echo("Available workers: scrape, normalize, enrich, graph, outreach")
 
 
 if __name__ == '__main__':

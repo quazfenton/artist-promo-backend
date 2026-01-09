@@ -1,19 +1,21 @@
-"""Comprehensive error handling and graceful shutdown system"""
+"""
+Comprehensive error handling and graceful shutdown system
+"""
 import asyncio
+import logging
 import signal
 import sys
 import traceback
-import logging
-from typing import Dict, Any, Optional, Callable
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import http_exception_handler
-from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
+from typing import Optional, Callable, Dict, Any
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 import os
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from app.utils.logger import logger
+from app.utils.config_validator import validate_startup_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -118,10 +120,10 @@ class GlobalExceptionHandler:
 # Global exception handler instance
 global_exception_handler = GlobalExceptionHandler()
 
-class ErrorTrackingMiddleware(BaseHTTPMiddleware):
+class ErrorTrackingMiddleware:
     """Middleware to track errors and add correlation IDs"""
     
-    async def dispatch(self, request: Request, call_next):
+    async def __call__(self, request: Request, call_next):
         # Add correlation ID to request
         correlation_id = request.headers.get("X-Correlation-ID") or self._generate_correlation_id()
         request.state.correlation_id = correlation_id
@@ -206,13 +208,17 @@ class GracefulShutdownManager:
 # Global shutdown manager
 shutdown_manager = GracefulShutdownManager()
 
-def setup_signal_handlers():
+def setup_signal_handlers(app: FastAPI):
     """Setup signal handlers for graceful shutdown"""
     
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        # Don't use asyncio.run() here as the event loop is already running
-        # Instead, schedule the shutdown coroutine
+        # Schedule shutdown in the event loop
+        if asyncio.get_event_loop().is_running():
+            asyncio.create_task(shutdown_manager.shutdown())
+        else:
+            # If event loop isn't running, run shutdown directly
+            asyncio.run(shutdown_manager.shutdown())
     
     # Handle SIGTERM and SIGINT
     signal.signal(signal.SIGTERM, signal_handler)
@@ -268,7 +274,7 @@ async def forbidden_exception_handler(request: Request, exc: ForbiddenError):
     """Handle forbidden errors"""
     return global_exception_handler.handle_exception(request, exc)
 
-# Register exception handlers with FastAPI
+# Register exception handlers with FastAPI app
 def register_exception_handlers(app: FastAPI):
     """Register custom exception handlers with FastAPI app"""
     app.add_exception_handler(ValidationError, validation_exception_handler)
@@ -280,29 +286,6 @@ def register_exception_handlers(app: FastAPI):
     @app.exception_handler(Exception)
     async def global_exception_handler_wrapper(request: Request, exc: Exception):
         return global_exception_handler.handle_exception(request, exc)
-
-# Utility functions for error handling
-def handle_db_error(exc: Exception, operation: str = "database operation"):
-    """Handle database errors appropriately"""
-    error_msg = f"Database error during {operation}: {str(exc)}"
-    logger.error(error_msg, exc_info=True)
-    
-    # Depending on the specific database error, you might want to return different responses
-    if "connection" in str(exc).lower() or "timeout" in str(exc).lower():
-        raise AppError("Database temporarily unavailable", 503)
-    else:
-        raise AppError("Database operation failed", 500)
-
-def handle_external_api_error(exc: Exception, service: str = "external service"):
-    """Handle errors from external API calls"""
-    error_msg = f"Error calling {service}: {str(exc)}"
-    logger.error(error_msg, exc_info=True)
-    
-    # If it's a timeout or connection error, it might be temporary
-    if "timeout" in str(exc).lower() or "connection" in str(exc).lower():
-        raise AppError(f"{service} temporarily unavailable", 503)
-    else:
-        raise AppError(f"Error with {service}", 502)
 
 # Context manager for safe operations
 from contextlib import asynccontextmanager
@@ -322,19 +305,26 @@ async def safe_operation(operation_name: str):
 class HealthCheckDuringShutdown:
     """Health check that considers shutdown state"""
     
-    def __init__(self):
-        self.ready_for_shutdown = False
+    def __init__(self, shutdown_mgr):
+        self.shutdown_manager = shutdown_mgr
     
-    async def readiness_check(self):
-        """Check if the app is ready to shut down"""
-        # During graceful shutdown, we might want to check if we're ready
-        # to stop accepting new requests
-        if shutdown_manager.shutdown_requested:
+    async def readiness_check(self) -> Dict[str, Any]:
+        """Check if the app is ready to serve requests during shutdown"""
+        if self.shutdown_manager.shutdown_requested:
             # Check if we're ready to shut down (e.g., no active long-running tasks)
-            return len(shutdown_manager.active_tasks) == 0
-        return True
+            active_tasks = len(self.shutdown_manager.active_tasks)
+            return {
+                "status": "not_ready" if active_tasks > 0 else "ready",
+                "active_tasks": active_tasks,
+                "shutdown_initiated": True
+            }
+        return {
+            "status": "ready",
+            "active_tasks": len(self.shutdown_manager.active_tasks),
+            "shutdown_initiated": False
+        }
 
-# Example usage in main app setup
+# Setup function to be called during app startup
 def setup_error_handling_and_shutdown(app: FastAPI):
     """Setup error handling and graceful shutdown for the app"""
     # Add error tracking middleware
@@ -344,26 +334,39 @@ def setup_error_handling_and_shutdown(app: FastAPI):
     register_exception_handlers(app)
     
     # Setup signal handlers
-    setup_signal_handlers()
+    setup_signal_handlers(app)
     
     # Add shutdown manager to app state
     @app.on_event("startup")
     async def startup_event():
         logger.info("Application started")
+        # Validate configuration at startup
+        validate_startup_config()
     
     @app.on_event("shutdown")
     async def shutdown_event():
         await shutdown_manager.shutdown()
 
+# Example usage in main app setup
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application"""
+    app = FastAPI(
+        title="Artist Promotion API",
+        description="Serverless backend for hip-hop artist promotion",
+        version="1.0.0"
+    )
+    
+    # Setup error handling and graceful shutdown
+    setup_error_handling_and_shutdown(app)
+    
+    return app
+
 if __name__ == "__main__":
     # Example of how to use the error handling system
     import uvicorn
-    from fastapi import FastAPI
+    from fastapi import FastAPI, HTTPException
     
-    app = FastAPI()
-    
-    # Setup error handling and shutdown
-    setup_error_handling_and_shutdown(app)
+    app = create_app()
     
     @app.get("/")
     async def root():
@@ -379,4 +382,4 @@ if __name__ == "__main__":
         return {"message": "Shutdown initiated"}
     
     # Run the app
-    # uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

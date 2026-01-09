@@ -302,6 +302,19 @@ class SpotifyPlaylistScraper(BaseScraper):
                 return False
         
         return True
+
+    async def get_user_profile_extended(self, user_id: str) -> Dict:
+        """
+        Get extended user profile with additional metrics
+        """
+        try:
+            # Get basic profile
+            profile = self.sp.user(user_id)
+
+            # Get user's playlists
+            playlists = self.sp.user_playlists(user_id, limit=50)
+
+            curator_data = [
                 {
                     'id': p['id'],
                     'name': p['name'],
@@ -309,9 +322,13 @@ class SpotifyPlaylistScraper(BaseScraper):
                 }
                 for p in playlists.get('items', [])
             ]
-            
-            return curator_data
-            
+
+            return {
+                **profile,
+                'curator_data': curator_data,
+                'playlist_count': len(playlists.get('items', []))
+            }
+
         except Exception as e:
             logger.error(f"[{self.name}] Error fetching user {user_id}: {str(e)}")
             return None
