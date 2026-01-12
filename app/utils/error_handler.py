@@ -215,7 +215,8 @@ def setup_signal_handlers(app: FastAPI):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         # Schedule shutdown in the event loop
         if asyncio.get_event_loop().is_running():
-            asyncio.create_task(shutdown_manager.shutdown())
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(shutdown_manager.shutdown()))
         else:
             # If event loop isn't running, run shutdown directly
             asyncio.run(shutdown_manager.shutdown())

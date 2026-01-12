@@ -48,14 +48,15 @@ def store_evidence_in_db(evidence: Evidence):
             # Add evidence to provenance
             if not resolved_entity.source_urls:
                 resolved_entity.source_urls = []
-            resolved_entity.source_urls.append({
+            new_evidence = {
                 "source": evidence.source,
                 "signal": evidence.signal,
                 "url": evidence.url,
                 "timestamp": evidence.timestamp,
                 "confidence": evidence.confidence,
                 "metadata": evidence.metadata
-            })
+            }
+            resolved_entity.source_urls = [*resolved_entity.source_urls, new_evidence]
             db.commit()
     except Exception as e:
         db.rollback()

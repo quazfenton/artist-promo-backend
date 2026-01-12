@@ -20,6 +20,8 @@ async def get_job_status_endpoint(
         
         return status
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
 

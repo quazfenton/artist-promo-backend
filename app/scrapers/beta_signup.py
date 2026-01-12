@@ -158,7 +158,8 @@ def find_beta_programs(base_url):
             
             if response.status_code == 200:
                 beta_pages.append(url)
-        except:
+        except Exception:
+            continue
             continue
     
     return beta_pages

@@ -50,7 +50,7 @@ def extract_captions_emails(youtube_video_id):
         return list(set(all_emails))  # Remove duplicates
         
     except Exception as e:
-        print(f"Error extracting emails from YouTube captions for video {video_id}: {str(e)}")
+        print(f"Error extracting emails from YouTube captions for video {youtube_video_id}: {str(e)}")
         return []
 
 def extract_video_description_emails(video_url):
