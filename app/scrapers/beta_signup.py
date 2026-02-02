@@ -91,10 +91,11 @@ def extract_early_adopter_community_info(community_url):
             r'(?:contributor|early adopter)\s+([A-Za-z\s]+)',
             r'(?:community member|beta tester)\s+([A-Za-z\s]+)'
         ]
-        
+
         for pattern in name_patterns:
             matches = re.findall(pattern, text_content, re.IGNORECASE)
             community_info['contact_persons'].extend(matches)
+            community_info['members'].extend(matches)  # Also add to members list
         
         # Extract social media links
         social_patterns = [
@@ -155,11 +156,11 @@ def find_beta_programs(base_url):
             url = urljoin(base_url, path)
             headers = {'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)'}
             response = requests.head(url, headers=headers, timeout=10)
-            
+
             if response.status_code == 200:
                 beta_pages.append(url)
         except Exception:
-            continue
+            pass
     
     return beta_pages
 

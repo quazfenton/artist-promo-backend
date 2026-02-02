@@ -260,18 +260,35 @@ class PipelineOrchestrator:
                 else:
                     normalized = self._normalize_generic_signal(payload)
                 
-                # Add provenance information
+                # Add provenance information - handle both dict and ORM object formats
+                if hasattr(raw_signal, 'source_url'):
+                    # This is an ORM object with attributes
+                    original_source = getattr(raw_signal, 'source_url', None)
+                    confidence_score = getattr(raw_signal, 'confidence_score', 80)
+                    extraction_timestamp = getattr(raw_signal, 'created_at', None)
+                else:
+                    # This is a dict
+                    original_source = raw_signal.get("source_url")
+                    confidence_score = raw_signal.get("confidence_score", 80)
+                    extraction_timestamp = raw_signal.get("created_at")
+
                 normalized["provenance"] = {
-                    "original_source": raw_signal.get("source_url"),
+                    "original_source": original_source,
                     "source_type": source_type,
-                    "confidence_score": raw_signal.get("confidence_score", 80),
-                    "extraction_timestamp": raw_signal.get("created_at")
+                    "confidence_score": confidence_score,
+                    "extraction_timestamp": extraction_timestamp
                 }
-                
+
                 normalized_signals.append(normalized)
-                
+
             except Exception as e:
-                logger.error(f"Error normalizing signal from {raw_signal.get('source_url')}: {str(e)}")
+                # Handle both dict and ORM object formats for error logging
+                if hasattr(raw_signal, 'source_url'):
+                    source_url = getattr(raw_signal, 'source_url', 'unknown')
+                else:
+                    source_url = raw_signal.get('source_url', 'unknown')
+
+                logger.error(f"Error normalizing signal from {source_url}: {str(e)}")
                 continue  # Continue with other signals
         
         # Save normalized signals with proper raw_signal_id references
@@ -281,7 +298,12 @@ class PipelineOrchestrator:
             for i, signal_data in enumerate(normalized_signals):
                 # Get the raw signal ID from the already saved raw signal
                 raw_signal_obj = raw_signals[i] if i < len(raw_signals) else None
-                raw_signal_id = raw_signal_obj.id if raw_signal_obj and hasattr(raw_signal_obj, 'id') else None
+                if raw_signal_obj and hasattr(raw_signal_obj, 'id'):
+                    raw_signal_id = raw_signal_obj.id
+                elif isinstance(raw_signal_obj, dict):
+                    raw_signal_id = raw_signal_obj.get('id')
+                else:
+                    raw_signal_id = None
 
                 staging_contact = StagingContact(
                     raw_signal_id=raw_signal_id,

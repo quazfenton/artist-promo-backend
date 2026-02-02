@@ -846,4 +846,6 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    host = os.getenv("HOST", "127.0.0.1")  # Default to localhost for security
+    uvicorn.run(app, host=host, port=8000)

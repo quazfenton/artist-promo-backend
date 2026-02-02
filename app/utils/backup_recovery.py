@@ -80,19 +80,27 @@ class DatabaseBackupManager:
         # Parse database URL to extract components
         from urllib.parse import urlparse
         parsed = urlparse(self.database_url)
-        
-        # Extract components
-        username = parsed.username
-        password = parsed.password
+
+        # Validate parsed components
         hostname = parsed.hostname
+        if not hostname:
+            raise ValueError(f"Invalid database URL: missing hostname in {self.database_url}")
+
+        username = parsed.username
+        if not username:
+            raise ValueError(f"Invalid database URL: missing username in {self.database_url}")
+
+        password = parsed.password
         port = parsed.port or 5432
         database = parsed.path.lstrip('/')
-        
+        if not database:
+            raise ValueError(f"Invalid database URL: missing database name in {self.database_url}")
+
         # Use environment variable for password to avoid command line exposure
         env = os.environ.copy()
         if password is not None:
             env['PGPASSWORD'] = str(password)
-        
+
         cmd = [
             'pg_dump',
             '-h', hostname,
@@ -153,19 +161,27 @@ class DatabaseBackupManager:
         # Parse database URL to extract components
         from urllib.parse import urlparse
         parsed = urlparse(self.database_url)
-        
-        # Extract components
-        username = parsed.username
-        password = parsed.password
+
+        # Validate parsed components
         hostname = parsed.hostname
+        if not hostname:
+            raise ValueError(f"Invalid database URL: missing hostname in {self.database_url}")
+
+        username = parsed.username
+        if not username:
+            raise ValueError(f"Invalid database URL: missing username in {self.database_url}")
+
+        password = parsed.password
         port = parsed.port or 5432
         database = parsed.path.lstrip('/')
-        
+        if not database:
+            raise ValueError(f"Invalid database URL: missing database name in {self.database_url}")
+
         # Use environment variable for password to avoid command line exposure
         env = os.environ.copy()
         if password is not None:
             env['PGPASSWORD'] = str(password)
-        
+
         cmd = [
             'psql',
             '-h', hostname,
@@ -244,10 +260,21 @@ class FileBackupManager:
         
         try:
             with zipfile.ZipFile(backup_path, 'r') as zipf:
+                # Validate all file paths to prevent zip slip vulnerability
+                for member in zipf.namelist():
+                    # Resolve the extracted path
+                    extracted_path = os.path.join(restore_path, member)
+                    # Normalize the path to resolve any '..' components
+                    extracted_path = os.path.normpath(extracted_path)
+                    # Ensure the path is within the intended directory
+                    if not extracted_path.startswith(str(restore_path)):
+                        raise ValueError(f"Unsafe path detected in archive: {member}")
+
+                # Extract only after validation
                 zipf.extractall(restore_path)
-            
+
             logger.info(f"Files restored to: {restore_path}")
-            
+
         except Exception as e:
             logger.error(f"Failed to restore file backup: {str(e)}")
             raise
@@ -418,7 +445,8 @@ class RecoveryManager:
         # Then, restore files if provided
         if file_backup_path and self.file_backup_manager:
             # Need to determine where to restore files
-            restore_dir = os.path.dirname(db_backup_path) + "/restored_files"
+            db_backup_dir = os.path.dirname(os.path.abspath(db_backup_path))
+            restore_dir = os.path.join(db_backup_dir, "restored_files")
             self.file_backup_manager.restore_backup(file_backup_path, restore_dir)
         
         logger.info("Full system recovery completed")

@@ -330,14 +330,19 @@ def convert_gps_to_decimal(gps_coords, gps_ref):
         
         if isinstance(gps_coords, tuple) and len(gps_coords) == 3:
             degrees, minutes, seconds = gps_coords
-            # Handle rational numbers (numerator, denominator)
+            # Handle rational numbers (numerator, denominator) with zero division check
+            def safe_rational_to_float(rational):
+                if isinstance(rational, tuple) and len(rational) >= 2 and rational[1] != 0:
+                    return rational[0] / rational[1]
+                return 0  # Return 0 as default if invalid rational
+
             if isinstance(degrees, tuple):
-                degrees = degrees[0] / degrees[1]
+                degrees = safe_rational_to_float(degrees)
             if isinstance(minutes, tuple):
-                minutes = minutes[0] / minutes[1]
+                minutes = safe_rational_to_float(minutes)
             if isinstance(seconds, tuple):
-                seconds = seconds[0] / seconds[1]
-                
+                seconds = safe_rational_to_float(seconds)
+
             return dms_to_decimal(float(degrees), float(minutes), float(seconds), gps_ref)
     
     except Exception as e:
