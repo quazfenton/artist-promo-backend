@@ -56,14 +56,9 @@ def store_evidence_in_db(evidence: Evidence):
                 "timestamp": evidence.timestamp,
                 "confidence": evidence.confidence,
                 "metadata": evidence.metadata
-<<<<<<< HEAD
-            }
-            resolved_entity.source_urls = [*resolved_entity.source_urls, new_evidence]
-=======
             })
             # Notify SQLAlchemy of the in-place mutation
             flag_modified(resolved_entity, 'source_urls')
->>>>>>> 6495f98 (loc)
             db.commit()
     except Exception as e:
         db.rollback()

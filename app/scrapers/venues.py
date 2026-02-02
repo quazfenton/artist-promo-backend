@@ -25,10 +25,15 @@ def extract_venue_emails(venue_url):
                 ip = ipaddress.ip_address(hostname)
                 if ip.is_private or ip.is_loopback or ip.is_reserved:
                     raise ValueError(f"Blocked private/reserved IP: {hostname}")
-            except ValueError:
-                # Not an IP address, check against common private hostnames
-                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
-                    raise ValueError(f"Blocked private hostname: {hostname}")
+            except ValueError as e:
+                # Check if this is an IP address parsing error or a blockage error
+                if "Blocked private/reserved IP" in str(e):
+                    # Re-raise the blockage error
+                    raise
+                else:
+                    # Not an IP address, check against common private hostnames
+                    if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                        raise ValueError(f"Blocked private hostname: {hostname}")
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',
@@ -88,10 +93,15 @@ def extract_booking_info(venue_url):
                 ip = ipaddress.ip_address(hostname)
                 if ip.is_private or ip.is_loopback or ip.is_reserved:
                     raise ValueError(f"Blocked private/reserved IP: {hostname}")
-            except ValueError:
-                # Not an IP address, check against common private hostnames
-                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
-                    raise ValueError(f"Blocked private hostname: {hostname}")
+            except ValueError as e:
+                # Check if this is an IP address parsing error or a blockage error
+                if "Blocked private/reserved IP" in str(e):
+                    # Re-raise the blockage error
+                    raise
+                else:
+                    # Not an IP address, check against common private hostnames
+                    if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                        raise ValueError(f"Blocked private hostname: {hostname}")
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',
@@ -208,10 +218,15 @@ def extract_promoter_roster(promoter_url):
                 ip = ipaddress.ip_address(hostname)
                 if ip.is_private or ip.is_loopback or ip.is_reserved:
                     raise ValueError(f"Blocked private/reserved IP: {hostname}")
-            except ValueError:
-                # Not an IP address, check against common private hostnames
-                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
-                    raise ValueError(f"Blocked private hostname: {hostname}")
+            except ValueError as e:
+                # Check if this is an IP address parsing error or a blockage error
+                if "Blocked private/reserved IP" in str(e):
+                    # Re-raise the blockage error
+                    raise
+                else:
+                    # Not an IP address, check against common private hostnames
+                    if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                        raise ValueError(f"Blocked private hostname: {hostname}")
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',

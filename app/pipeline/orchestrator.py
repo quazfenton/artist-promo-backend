@@ -202,32 +202,44 @@ class PipelineOrchestrator:
                 # Continue with other URLs
                 continue
         
-        # Save raw signals to database
+        # Save raw signals to database and return the saved records with IDs
         db = SessionLocal()
         try:
+            saved_raw_signals = []
             for signal_data in raw_signals:
                 raw_signal = ScraperRawSignal(**signal_data)
                 db.add(raw_signal)
+                saved_raw_signals.append(raw_signal)
             db.commit()
+
+            # Refresh to get the IDs
+            for raw_signal in saved_raw_signals:
+                db.refresh(raw_signal)
         except Exception as e:
             db.rollback()
             logger.error(f"Error saving raw signals to database: {str(e)}")
             raise
         finally:
             db.close()
-        
-        return raw_signals
+
+        # Return the saved raw signal records with IDs
+        return saved_raw_signals
     
-    async def _normalize_signals(self, raw_signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _normalize_signals(self, raw_signals: List[Any]) -> List[Dict[str, Any]]:
         """Normalize raw signals into standardized format"""
         normalized_signals = []
-        
+
         for raw_signal in raw_signals:
             try:
-                payload = raw_signal.get("payload", {})
-                
-                # Normalize based on source type
-                source_type = raw_signal.get("source_type", "unknown")
+                # Handle both dict and ORM object formats
+                if hasattr(raw_signal, 'payload'):
+                    # This is an ORM object with attributes
+                    payload = raw_signal.payload or {}
+                    source_type = getattr(raw_signal, 'source_type', 'unknown')
+                else:
+                    # This is a dict
+                    payload = raw_signal.get("payload", {})
+                    source_type = raw_signal.get("source_type", "unknown")
                 
                 if source_type == "social":
                     normalized = self._normalize_social_signal(payload)
@@ -262,24 +274,15 @@ class PipelineOrchestrator:
                 logger.error(f"Error normalizing signal from {raw_signal.get('source_url')}: {str(e)}")
                 continue  # Continue with other signals
         
-        # Save raw signals first to get their IDs, then save normalized signals
+        # Save normalized signals with proper raw_signal_id references
         db = SessionLocal()
         try:
-            # First, save raw signals and get their IDs
-            saved_raw_signals = []
-            for signal_data in raw_signals:
-                raw_signal_record = ScraperRawSignal(**signal_data)
-                db.add(raw_signal_record)
-                saved_raw_signals.append(raw_signal_record)
-            db.commit()
-
-            # Refresh to get the IDs
-            for raw_signal_record in saved_raw_signals:
-                db.refresh(raw_signal_record)
-
-            # Now save normalized signals with proper raw_signal_id references
+            # Save normalized signals with proper raw_signal_id references
             for i, signal_data in enumerate(normalized_signals):
-                raw_signal_id = saved_raw_signals[i].id if i < len(saved_raw_signals) else None
+                # Get the raw signal ID from the already saved raw signal
+                raw_signal_obj = raw_signals[i] if i < len(raw_signals) else None
+                raw_signal_id = raw_signal_obj.id if raw_signal_obj and hasattr(raw_signal_obj, 'id') else None
+
                 staging_contact = StagingContact(
                     raw_signal_id=raw_signal_id,
                     name=signal_data.get("name"),

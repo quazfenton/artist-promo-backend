@@ -90,7 +90,8 @@ class DatabaseBackupManager:
         
         # Use environment variable for password to avoid command line exposure
         env = os.environ.copy()
-        env['PGPASSWORD'] = password
+        if password is not None:
+            env['PGPASSWORD'] = str(password)
         
         cmd = [
             'pg_dump',
@@ -162,7 +163,8 @@ class DatabaseBackupManager:
         
         # Use environment variable for password to avoid command line exposure
         env = os.environ.copy()
-        env['PGPASSWORD'] = password
+        if password is not None:
+            env['PGPASSWORD'] = str(password)
         
         cmd = [
             'psql',

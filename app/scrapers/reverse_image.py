@@ -232,7 +232,11 @@ def extract_contact_info_from_page(url):
                 else:
                     domain = 'unknown.com/'  # fallback
 
-                profile_url = f"https://{domain}{match}"
+                # For TikTok, we need to add the @ symbol to the profile URL
+                if 'tiktok.com/' in domain and not match.startswith('@'):
+                    profile_url = f"https://{domain}@{match}"
+                else:
+                    profile_url = f"https://{domain}{match}"
                 contact_data['social_profiles'].append(profile_url)
         
         # Find possible names (simple heuristic - people names often have capital letters)

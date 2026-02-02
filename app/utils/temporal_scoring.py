@@ -42,8 +42,14 @@ def decay_confidence_over_time(base_score: float, last_seen: datetime, decay_rat
     """
     if not last_seen:
         return base_score
-    
-    days_since_seen = (datetime.now(timezone.utc) - last_seen).days
+
+    # Ensure both datetimes have the same timezone awareness
+    now = datetime.now(timezone.utc)
+    if last_seen.tzinfo is None:
+        # If last_seen is naive, make it timezone-aware by assuming UTC
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+    days_since_seen = (now - last_seen).days
     decay_factor = math.exp(-decay_rate * days_since_seen)
     return max(0, base_score * decay_factor)
 
