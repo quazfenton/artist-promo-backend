@@ -120,17 +120,19 @@ class GlobalExceptionHandler:
 # Global exception handler instance
 global_exception_handler = GlobalExceptionHandler()
 
-class ErrorTrackingMiddleware:
+from fastapi.middleware.base import BaseHTTPMiddleware
+
+class ErrorTrackingMiddleware(BaseHTTPMiddleware):
     """Middleware to track errors and add correlation IDs"""
-    
-    async def __call__(self, request: Request, call_next):
+
+    async def dispatch(self, request: Request, call_next):
         # Add correlation ID to request
         correlation_id = request.headers.get("X-Correlation-ID") or self._generate_correlation_id()
         request.state.correlation_id = correlation_id
-        
+
         try:
             response = await call_next(request)
-            
+
             # Log successful requests
             if response.status_code >= 400:
                 logger.warning(
@@ -140,10 +142,10 @@ class ErrorTrackingMiddleware:
                         "status_code": response.status_code
                     }
                 )
-            
+
             # Add correlation ID to response
             response.headers["X-Correlation-ID"] = correlation_id
-            
+
             return response
         except Exception as exc:
             # Handle exceptions
@@ -214,11 +216,20 @@ def setup_signal_handlers(app: FastAPI):
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         # Schedule shutdown in the event loop
+<<<<<<< HEAD
         if asyncio.get_event_loop().is_running():
             loop = asyncio.get_event_loop()
             loop.call_soon_threadsafe(lambda: asyncio.ensure_future(shutdown_manager.shutdown()))
         else:
             # If event loop isn't running, run shutdown directly
+=======
+        try:
+            loop = asyncio.get_running_loop()
+            # Schedule the coroutine in the running event loop
+            loop.create_task(shutdown_manager.shutdown())
+        except RuntimeError:
+            # If no event loop is running, run shutdown directly
+>>>>>>> 6495f98 (loc)
             asyncio.run(shutdown_manager.shutdown())
     
     # Handle SIGTERM and SIGINT

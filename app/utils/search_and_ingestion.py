@@ -230,7 +230,10 @@ class WebhookIngestor:
                         existing.source_urls.append(artist)
                 if payload.get("confidence"):
                     existing.confidence_score = payload["confidence"]
-                
+
+                # Commit the changes to the database
+                db.commit()
+
                 entity_id = existing.id
             else:
                 # Create new entity

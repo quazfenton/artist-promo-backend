@@ -183,14 +183,11 @@ class EntityResolverEnrichmentWorker:
             try:
                 # Find staging contacts associated with this normalization job
                 # We'll look for staging contacts that came from the raw signals of this job
-                # This requires looking through the provenance field
-                # Since provenance is stored as JSON, we need to query differently
-                staging_contacts = db.query(StagingContact).all()
-                # Filter in Python since JSON contains queries can be tricky
-                staging_contacts = [
-                    contact for contact in staging_contacts
-                    if contact.provenance and contact.provenance.get("job_id") == normalized_job_id
-                ]
+                # Using a more efficient database-level filter
+                from sqlalchemy import text
+                staging_contacts = db.query(StagingContact).filter(
+                    text("provenance->>'job_id' = :job_id OR provenance LIKE :job_pattern")
+                ).params(job_id=normalized_job_id, job_pattern=f'%{normalized_job_id}%').all()
                 
                 if not staging_contacts:
                     logger.info(f"No staging contacts found for job {normalized_job_id}")

@@ -12,7 +12,7 @@ class ScraperRawSignal(Base):
     __tablename__ = "scraper_raw_signals"
 
     id = Column(Integer, primary_key=True)
-    job_id = Column(String, unique=True, index=True)  # From the job queue
+    job_id = Column(String, index=True)  # From the job queue - removed unique=True to allow multiple signals per job
     source_platform = Column(String)   # spotify, youtube, instagram, etc.
     payload = Column(JSON)             # raw scraper output
     dedupe_key = Column(String, index=True)  # For idempotency

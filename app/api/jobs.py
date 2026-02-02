@@ -12,6 +12,7 @@ async def get_job_status_endpoint(
     current_user: dict = Depends(get_current_user)
 ):
     """Get status of a background job"""
+<<<<<<< HEAD
     try:
         status = get_job_status(job_id)
         
@@ -24,6 +25,14 @@ async def get_job_status_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get job status: {str(e)}")
+=======
+    status = get_job_status(job_id)
+
+    if status.get("status") == "unknown":
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return status
+>>>>>>> 6495f98 (loc)
 
 @router.get("/queues")
 async def get_queue_status(current_user: dict = Depends(get_current_user)):

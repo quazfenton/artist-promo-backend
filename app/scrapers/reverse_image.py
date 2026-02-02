@@ -212,7 +212,27 @@ def extract_contact_info_from_page(url):
         for pattern in social_patterns:
             matches = re.findall(pattern, text_content, re.IGNORECASE)
             for match in matches:
-                profile_url = f"https://www.{pattern.split('instagram')[0].split('(')[-1]}{match}"
+                # Extract domain from pattern to construct proper URL
+                if 'instagram' in pattern:
+                    domain = 'instagram.com/'
+                elif 'twitter' in pattern:
+                    domain = 'twitter.com/'
+                elif 'facebook' in pattern:
+                    domain = 'facebook.com/'
+                elif 'linkedin' in pattern:
+                    domain = 'linkedin.com/'
+                elif 'youtube' in pattern:
+                    domain = 'youtube.com/'
+                elif 'tiktok' in pattern:
+                    domain = 'tiktok.com/'
+                elif 'soundcloud' in pattern:
+                    domain = 'soundcloud.com/'
+                elif 'bandcamp' in pattern:
+                    domain = 'bandcamp.com/'
+                else:
+                    domain = 'unknown.com/'  # fallback
+
+                profile_url = f"https://{domain}{match}"
                 contact_data['social_profiles'].append(profile_url)
         
         # Find possible names (simple heuristic - people names often have capital letters)

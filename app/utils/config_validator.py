@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import dns.resolver
 import redis
 import psycopg2
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class ConfigValidator:
             # Test database connection
             engine = create_engine(database_url, connect_args={"connect_timeout": 10})
             with engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             
             return True, "Database configuration is valid"
             
@@ -185,8 +185,8 @@ class ConfigValidator:
         # Validate key lengths
         invalid_keys = [key for key in api_keys if len(key) < 16]
         if invalid_keys:
-            logger.warning(f"Some API keys are shorter than recommended 16 characters: {invalid_keys[:3]}...")
-        
+            logger.warning(f"{len(invalid_keys)} API keys are shorter than recommended 16 characters")
+
         return True, f"Found {len(api_keys)} API key(s)"
     
     @staticmethod

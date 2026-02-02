@@ -159,7 +159,10 @@ def find_beta_programs(base_url):
             if response.status_code == 200:
                 beta_pages.append(url)
         except Exception:
+<<<<<<< HEAD
             continue
+=======
+>>>>>>> 6495f98 (loc)
             continue
     
     return beta_pages

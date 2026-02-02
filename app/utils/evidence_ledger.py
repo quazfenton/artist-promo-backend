@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Any
 import json
+from sqlalchemy.orm.attributes import flag_modified
 from app.models.database import SessionLocal
 from app.models.staging import ResolvedEntity
 
@@ -43,7 +44,7 @@ def store_evidence_in_db(evidence: Evidence):
         resolved_entity = db.query(ResolvedEntity).filter(
             ResolvedEntity.email == evidence.email
         ).first()
-        
+
         if resolved_entity:
             # Add evidence to provenance
             if not resolved_entity.source_urls:
@@ -55,8 +56,14 @@ def store_evidence_in_db(evidence: Evidence):
                 "timestamp": evidence.timestamp,
                 "confidence": evidence.confidence,
                 "metadata": evidence.metadata
+<<<<<<< HEAD
             }
             resolved_entity.source_urls = [*resolved_entity.source_urls, new_evidence]
+=======
+            })
+            # Notify SQLAlchemy of the in-place mutation
+            flag_modified(resolved_entity, 'source_urls')
+>>>>>>> 6495f98 (loc)
             db.commit()
     except Exception as e:
         db.rollback()

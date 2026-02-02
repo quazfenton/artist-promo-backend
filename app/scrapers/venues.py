@@ -12,6 +12,24 @@ def extract_venue_emails(venue_url):
     Extract booking and contact emails from venue websites
     """
     try:
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(venue_url)
+        if parsed_url.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+        # Block private IP ranges
+        import ipaddress
+        hostname = parsed_url.hostname
+        if hostname:
+            try:
+                ip = ipaddress.ip_address(hostname)
+                if ip.is_private or ip.is_loopback or ip.is_reserved:
+                    raise ValueError(f"Blocked private/reserved IP: {hostname}")
+            except ValueError:
+                # Not an IP address, check against common private hostnames
+                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                    raise ValueError(f"Blocked private hostname: {hostname}")
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -19,7 +37,7 @@ def extract_venue_emails(venue_url):
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
         }
-        
+
         response = requests.get(venue_url, headers=headers, timeout=30)
         response.raise_for_status()
         
@@ -57,10 +75,28 @@ def extract_booking_info(venue_url):
     Extract comprehensive booking information from venue
     """
     try:
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(venue_url)
+        if parsed_url.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+        # Block private IP ranges
+        import ipaddress
+        hostname = parsed_url.hostname
+        if hostname:
+            try:
+                ip = ipaddress.ip_address(hostname)
+                if ip.is_private or ip.is_loopback or ip.is_reserved:
+                    raise ValueError(f"Blocked private/reserved IP: {hostname}")
+            except ValueError:
+                # Not an IP address, check against common private hostnames
+                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                    raise ValueError(f"Blocked private hostname: {hostname}")
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',
         }
-        
+
         response = requests.get(venue_url, headers=headers, timeout=30)
         response.raise_for_status()
         
@@ -159,10 +195,28 @@ def extract_promoter_roster(promoter_url):
     Extract roster of artists from promoter/booking agency websites
     """
     try:
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(promoter_url)
+        if parsed_url.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+        # Block private IP ranges
+        import ipaddress
+        hostname = parsed_url.hostname
+        if hostname:
+            try:
+                ip = ipaddress.ip_address(hostname)
+                if ip.is_private or ip.is_loopback or ip.is_reserved:
+                    raise ValueError(f"Blocked private/reserved IP: {hostname}")
+            except ValueError:
+                # Not an IP address, check against common private hostnames
+                if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                    raise ValueError(f"Blocked private hostname: {hostname}")
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)',
         }
-        
+
         response = requests.get(promoter_url, headers=headers, timeout=30)
         response.raise_for_status()
         
@@ -230,9 +284,28 @@ def find_venue_booking_pages(base_url):
     for path in common_booking_paths:
         try:
             url = urljoin(base_url, path)
+
+            # Validate URL to prevent SSRF
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in ('http', 'https'):
+                continue  # Skip invalid schemes
+
+            # Block private IP ranges
+            import ipaddress
+            hostname = parsed_url.hostname
+            if hostname:
+                try:
+                    ip = ipaddress.ip_address(hostname)
+                    if ip.is_private or ip.is_loopback or ip.is_reserved:
+                        continue  # Skip private/reserved IPs
+                except ValueError:
+                    # Not an IP address, check against common private hostnames
+                    if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal')):
+                        continue  # Skip private hostnames
+
             headers = {'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)'}
             response = requests.head(url, headers=headers, timeout=10)
-            
+
             if response.status_code == 200:
                 booking_pages.append(url)
         except:

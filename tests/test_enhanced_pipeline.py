@@ -16,7 +16,7 @@ from app.utils.manager_resolution import calculate_manager_resolution_confidence
 from app.utils.async_scraping import scrape_nitter, scrape_invidious_channel
 from app.utils.pipeline_orchestrator import PipelineProcessor, SignalNormalizer, EntityResolver
 from app.utils.search_and_ingestion import SearchIndex, WebhookIngestor
-from app.utils.confidence_calibration import ConfidenceDecayManager, SourceTrustCalibrator, WrongContactDetector
+from app.utils.confidence_calibration import ConfidenceDecayManager, SourceTrustCalibrator, WrongContactDetector, ManagerDriftTracker, ColdStartSafety
 
 def test_evidence_ledger():
     """Test evidence ledger functionality"""

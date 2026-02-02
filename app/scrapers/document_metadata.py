@@ -9,7 +9,8 @@ from PIL import Image
 from PIL.ExifTags import TAGS
 import io
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+import os
 from app.utils.email_utils import decode_obfuscated_email, validate_email_address
 
 def extract_emails_from_pdf_metadata(pdf_path_or_url):
@@ -19,7 +20,7 @@ def extract_emails_from_pdf_metadata(pdf_path_or_url):
     try:
         # Handle both local paths and URLs
         if pdf_path_or_url.startswith(('http://', 'https://')):
-            response = requests.get(pdf_path_or_url)
+            response = requests.get(pdf_path_or_url, timeout=30)
             response.raise_for_status()
             pdf_content = io.BytesIO(response.content)
         else:
@@ -31,6 +32,7 @@ def extract_emails_from_pdf_metadata(pdf_path_or_url):
         content_emails = []
         
         # Extract from metadata
+        metadata = None
         if pdf_reader.metadata:
             metadata = pdf_reader.metadata
             for key, value in metadata.items():
@@ -41,7 +43,7 @@ def extract_emails_from_pdf_metadata(pdf_path_or_url):
                         normalized_email = decode_obfuscated_email(email)
                         if validate_email_address(normalized_email):
                             metadata_emails.append(normalized_email)
-        
+
         # Extract from content
         for page in pdf_reader.pages:
             text = page.extract_text()
@@ -79,7 +81,7 @@ def extract_emails_from_docx_metadata(docx_path_or_url):
     try:
         # Handle both local paths and URLs
         if docx_path_or_url.startswith(('http://', 'https://')):
-            response = requests.get(docx_path_or_url)
+            response = requests.get(docx_path_or_url, timeout=30)
             response.raise_for_status()
             docx_content = io.BytesIO(response.content)
         else:
@@ -160,7 +162,7 @@ def extract_emails_from_pptx_metadata(pptx_path_or_url):
     try:
         # Handle both local paths and URLs
         if pptx_path_or_url.startswith(('http://', 'https://')):
-            response = requests.get(pptx_path_or_url)
+            response = requests.get(pptx_path_or_url, timeout=30)
             response.raise_for_status()
             pptx_content = io.BytesIO(response.content)
         else:
@@ -233,7 +235,7 @@ def extract_emails_from_image_metadata(image_path_or_url):
     try:
         # Handle both local paths and URLs
         if image_path_or_url.startswith(('http://', 'https://')):
-            response = requests.get(image_path_or_url)
+            response = requests.get(image_path_or_url, timeout=30)
             response.raise_for_status()
             image_content = io.BytesIO(response.content)
         else:
@@ -299,7 +301,7 @@ def extract_contact_info_from_document(document_url):
     """
     try:
         # Determine document type from URL or content
-        response = requests.get(document_url)
+        response = requests.get(document_url, timeout=30)
         response.raise_for_status()
         
         # Get file extension

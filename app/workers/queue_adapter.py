@@ -45,10 +45,8 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
         if seen_before(fp):
-            # If we've seen this job before, return the existing job_id
-            # In a real implementation, you might want to return the existing job_id
-            # or raise an exception depending on your needs
-            pass  # For now, we'll continue and create a new job
+            # Return the same job_id to avoid duplicates
+            return job["job_id"]  # Return existing job_id to avoid creating duplicate
     
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
@@ -160,7 +158,7 @@ def get_active_queues() -> Dict[str, int]:
     Get lengths of all active queues
     """
     queues = {}
-    for key in r.keys("queue:*"):
+    for key in r.scan_iter("queue:*"):
         if key != "queue:dead_letter":  # Exclude dead letter queue from active queues
             queues[key] = r.llen(key)
     return queues

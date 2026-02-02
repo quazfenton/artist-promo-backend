@@ -1,7 +1,7 @@
 """
 Temporal signal strength and freshness scoring system
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 import math
 
@@ -16,7 +16,7 @@ def freshness_weight(timestamp: str) -> float:
         else:
             signal_time = timestamp
             
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         age = now - signal_time
         
         # Freshness weights: newer signals are more valuable
@@ -43,7 +43,7 @@ def decay_confidence_over_time(base_score: float, last_seen: datetime, decay_rat
     if not last_seen:
         return base_score
     
-    days_since_seen = (datetime.utcnow() - last_seen).days
+    days_since_seen = (datetime.now(timezone.utc) - last_seen).days
     decay_factor = math.exp(-decay_rate * days_since_seen)
     return max(0, base_score * decay_factor)
 
@@ -79,7 +79,7 @@ def get_signal_recency_category(timestamp: str) -> str:
         else:
             signal_time = timestamp
             
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         age = now - signal_time
         
         if age < timedelta(days=7):
@@ -174,7 +174,7 @@ def should_refresh_signal(timestamp: str, max_age_days: int = 90) -> bool:
         else:
             signal_time = timestamp
             
-        age = (datetime.utcnow() - signal_time).days
+        age = (datetime.now(timezone.utc) - signal_time).days
         return age > max_age_days
     except:
         # If parsing fails, assume it needs refresh
@@ -212,11 +212,15 @@ def calculate_signal_consistency_score(evidence_items: List[Dict[str, Any]]) -> 
     gaps = []
     
     for i in range(1, len(sorted_evidence)):
-        prev_time = datetime.fromisoformat(sorted_evidence[i-1]['timestamp'].replace('Z', '+00:00'))
-        curr_time = datetime.fromisoformat(sorted_evidence[i]['timestamp'].replace('Z', '+00:00'))
-        gap = (curr_time - prev_time).days
-        gaps.append(gap)
-        total_gap += gap
+        try:
+            prev_time = datetime.fromisoformat(sorted_evidence[i-1]['timestamp'].replace('Z', '+00:00'))
+            curr_time = datetime.fromisoformat(sorted_evidence[i]['timestamp'].replace('Z', '+00:00'))
+            gap = (curr_time - prev_time).days
+            gaps.append(gap)
+            total_gap += gap
+        except ValueError:
+            # Skip invalid timestamps
+            continue
     
     avg_gap = total_gap / len(gaps) if gaps else 0
     
@@ -242,10 +246,14 @@ def get_optimal_refresh_interval(evidence_items: List[Dict[str, Any]]) -> int:
     
     gaps = []
     for i in range(1, len(sorted_evidence)):
-        prev_time = datetime.fromisoformat(sorted_evidence[i-1]['timestamp'].replace('Z', '+00:00'))
-        curr_time = datetime.fromisoformat(sorted_evidence[i]['timestamp'].replace('Z', '+00:00'))
-        gap = (curr_time - prev_time).days
-        gaps.append(gap)
+        try:
+            prev_time = datetime.fromisoformat(sorted_evidence[i-1]['timestamp'].replace('Z', '+00:00'))
+            curr_time = datetime.fromisoformat(sorted_evidence[i]['timestamp'].replace('Z', '+00:00'))
+            gap = (curr_time - prev_time).days
+            gaps.append(gap)
+        except ValueError:
+            # Skip invalid timestamps
+            continue
     
     if not gaps:
         return 90

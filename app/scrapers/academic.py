@@ -543,7 +543,18 @@ def batch_scrape_academic_contacts(school_urls):
     
     # Remove duplicates
     all_contacts['total_emails'] = list(set(all_contacts['total_emails']))
-    all_contacts['faculty_contacts'] = list({frozenset(contact.items()) for contact in all_contacts['faculty_contacts']})
+
+    # Remove duplicate faculty contacts while preserving dict structure
+    seen_contacts = set()
+    unique_faculty_contacts = []
+    for contact in all_contacts['faculty_contacts']:
+        # Create a hashable representation of the contact dict
+        contact_tuple = tuple(sorted(contact.items())) if isinstance(contact, dict) else contact
+        if contact_tuple not in seen_contacts:
+            seen_contacts.add(contact_tuple)
+            unique_faculty_contacts.append(contact)
+    all_contacts['faculty_contacts'] = unique_faculty_contacts
+
     all_contacts['industry_connections'] = list(set(all_contacts['industry_connections']))
     all_contacts['student_orgs'] = list(set(all_contacts['student_orgs']))
     

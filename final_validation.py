@@ -74,19 +74,22 @@ def main():
     
     all_passed = True
     
+    # Get the project root dynamically from the script location
+    project_root = Path(__file__).parent
+
     for file_path, module_name in files_to_check:
-        full_path = f"/root/code/artist-promo-backend/{file_path}"
-        
+        full_path = project_root / file_path
+
         # Check if file exists
         if not validate_file_exists(full_path):
             all_passed = False
             continue
-            
+
         # Check syntax
         if not validate_syntax(full_path):
             all_passed = False
             continue
-            
+
         # Try to import
         if not validate_module_import(full_path, module_name):
             all_passed = False

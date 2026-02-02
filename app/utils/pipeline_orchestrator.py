@@ -59,12 +59,14 @@ class PipelineOrchestrator:
                     # In a real system, you'd have a state field
                     # For now, we'll just log the transition
                     print(f"Advanced entity {record_id} to {new_state.value}")
+                    db.commit()  # Commit the changes
                     return True
             elif entity_type == "contact":
                 contact = db.query(Contact).filter(Contact.id == record_id).first()
                 if contact:
                     contact.updated_at = datetime.utcnow()
                     print(f"Advanced contact {record_id} to {new_state.value}")
+                    db.commit()  # Commit the changes
                     return True
             elif entity_type == "raw_signal":
                 signal = db.query(ScraperRawSignal).filter(ScraperRawSignal.id == record_id).first()

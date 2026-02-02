@@ -8,6 +8,7 @@ from collections import defaultdict
 import threading
 from app.utils.temporal_scoring import freshness_weight
 from app.utils.evidence_ledger import calculate_trust_score
+from app.utils.search_and_ingestion import OutboundCooldownScheduler
 
 class ConfidenceDecayManager:
     """Manages confidence decay over time"""
@@ -373,6 +374,7 @@ class SendReadinessGate:
         return True
 
 # Global instances
+cooldown_scheduler = OutboundCooldownScheduler()
 confidence_decay_manager = ConfidenceDecayManager()
 source_trust_calibrator = SourceTrustCalibrator()
 wrong_contact_detector = WrongContactDetector()

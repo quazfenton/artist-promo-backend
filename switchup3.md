@@ -44,7 +44,10 @@ def validate_email_address(email):
 utils/storage.py
 import pymongo
 
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+import os
+
+mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+client = pymongo.MongoClient(mongo_uri)
 db = client["artist_promo"]
 contacts_col = db["contacts"]
 
@@ -269,7 +272,10 @@ def validate_email_address(email):
 utils/storage.py – store normalized contacts:
 import pymongo
 
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+import os
+
+mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+client = pymongo.MongoClient(mongo_uri)
 db = client["artist_promo"]
 contacts_col = db["contacts"]
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Depends, Req
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import csv
 import io
@@ -101,7 +101,7 @@ app.include_router(jobs_router)
 
 # Add webhook ingestion endpoint
 @app.post("/ingest")
-async def ingest_webhook(payload: Dict[str, Any], request: Request):
+async def ingest_webhook(payload: Dict[str, Any], request: Request, api_key_valid: bool = Depends(verify_api_key)):
     """Webhook endpoint for external signal ingestion"""
     try:
         from app.utils.search_and_ingestion import get_webhook_ingestor

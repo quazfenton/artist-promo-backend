@@ -115,6 +115,10 @@ class DatabaseBackupManager:
         """Restore database from backup"""
         backup_path = Path(backup_path)
         
+        # Track if we decompressed the file
+        was_compressed = backup_path.suffix == '.gz'
+        original_backup_path = backup_path
+
         # Decompress if needed
         if backup_path.suffix == '.gz':
             decompressed_path = backup_path.with_suffix('')
@@ -122,7 +126,7 @@ class DatabaseBackupManager:
                 with open(decompressed_path, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
             backup_path = decompressed_path
-        
+
         try:
             if self.db_type == "postgresql":
                 self._restore_postgres_backup(backup_path)
@@ -130,15 +134,15 @@ class DatabaseBackupManager:
                 self._restore_sqlite_backup(backup_path)
             else:
                 raise ValueError(f"Restore not implemented for {self.db_type}")
-            
+
             logger.info(f"Database restored from: {backup_path}")
-            
+
         except Exception as e:
             logger.error(f"Failed to restore database backup: {str(e)}")
             raise
         finally:
-            # Clean up decompressed file if we created one
-            if backup_path.suffix == '.sql' and backup_path.exists():
+            # Clean up decompressed file only if we created one (was originally compressed)
+            if was_compressed and backup_path.suffix == '.sql' and backup_path.exists():
                 backup_path.unlink()
     
     def _restore_postgres_backup(self, backup_path: Path):

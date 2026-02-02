@@ -58,12 +58,12 @@ def extract_conference_speaker_contacts(conference_url):
                         cleaned_match = re.sub(r'\s+', ' ', match.strip())
                         if len(cleaned_match) > 3:  # Avoid short matches
                             if 'speaker' in pattern.lower() or 'presenter' in pattern.lower():
-                                conf_contacts['speakers'].append(cleaned_match)
+                                conference_contacts['speakers'].append(cleaned_match)
                             elif 'organizer' in pattern.lower() or 'staff' in pattern.lower():
-                                conf_contacts['organizers'].append(cleaned_match)
+                                conference_contacts['organizers'].append(cleaned_match)
                             else:
                                 # Default to speaker for music industry context
-                                conf_contacts['speakers'].append(cleaned_match)
+                                conference_contacts['speakers'].append(cleaned_match)
         
         # Extract emails
         text_content = soup.get_text()

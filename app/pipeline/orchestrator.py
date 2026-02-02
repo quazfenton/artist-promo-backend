@@ -21,9 +21,72 @@ from app.models.database import SessionLocal, ScraperRawSignal, StagingContact, 
 
 logger = logging.getLogger(__name__)
 
+# Stub implementations for missing scraper functions
+async def extract_contact_from_music_platform(url):
+    """Stub implementation for music platform contact extraction"""
+    logger.warning(f"Music platform scraper not implemented for: {url}")
+    return []
+
+async def extract_contact_from_link_in_bio(url):
+    """Stub implementation for link-in-bio contact extraction"""
+    logger.warning(f"Link-in-bio scraper not implemented for: {url}")
+    return []
+
+async def extract_contact_from_press_kit(url):
+    """Stub implementation for press kit contact extraction"""
+    logger.warning(f"Press kit scraper not implemented for: {url}")
+    return []
+
+async def extract_contact_from_podcast_page(url):
+    """Stub implementation for podcast page contact extraction"""
+    logger.warning(f"Podcast page scraper not implemented for: {url}")
+    return []
+
+async def extract_contact_from_news_article(url):
+    """Stub implementation for news article contact extraction"""
+    logger.warning(f"News article scraper not implemented for: {url}")
+    return []
+
+async def extract_contact_from_general_web(url):
+    """Stub implementation for general web contact extraction"""
+    logger.warning(f"General web scraper not implemented for: {url}")
+    return []
+
+class PipelineStateManager:
+    """Manage pipeline state and progress"""
+
+    def __init__(self):
+        pass
+
+    async def initialize_pipeline(self, job_id: str, source_urls: List[str]) -> Dict[str, Any]:
+        """Initialize pipeline state"""
+        return {"job_id": job_id, "source_urls": source_urls}
+
+    async def update_step_status(self, job_id: str, step: Any, status: str):
+        """Update step status"""
+        pass
+
+    async def finalize_pipeline(self, job_id: str, results: Any) -> Dict[str, Any]:
+        """Finalize pipeline"""
+        return {"job_id": job_id, "results": results}
+
+    async def fail_pipeline(self, job_id: str, error: str):
+        """Mark pipeline as failed"""
+        pass
+
+class PipelineErrorHandler:
+    """Handle pipeline errors"""
+
+    def __init__(self):
+        pass
+
+    async def handle_error(self, job_id: str, error: Exception, step: str) -> Dict[str, Any]:
+        """Handle pipeline error"""
+        return {"job_id": job_id, "error": str(error), "step": step}
+
 class PipelineOrchestrator:
     """Main orchestrator for the scraping and contact resolution pipeline"""
-    
+
     def __init__(self):
         self.state_manager = PipelineStateManager()
         self.error_handler = PipelineErrorHandler()
@@ -199,12 +262,26 @@ class PipelineOrchestrator:
                 logger.error(f"Error normalizing signal from {raw_signal.get('source_url')}: {str(e)}")
                 continue  # Continue with other signals
         
-        # Save normalized signals to staging
+        # Save raw signals first to get their IDs, then save normalized signals
         db = SessionLocal()
         try:
-            for signal_data in normalized_signals:
+            # First, save raw signals and get their IDs
+            saved_raw_signals = []
+            for signal_data in raw_signals:
+                raw_signal_record = ScraperRawSignal(**signal_data)
+                db.add(raw_signal_record)
+                saved_raw_signals.append(raw_signal_record)
+            db.commit()
+
+            # Refresh to get the IDs
+            for raw_signal_record in saved_raw_signals:
+                db.refresh(raw_signal_record)
+
+            # Now save normalized signals with proper raw_signal_id references
+            for i, signal_data in enumerate(normalized_signals):
+                raw_signal_id = saved_raw_signals[i].id if i < len(saved_raw_signals) else None
                 staging_contact = StagingContact(
-                    raw_signal_id=raw_signal.get("id"),  # This would need to be set properly
+                    raw_signal_id=raw_signal_id,
                     name=signal_data.get("name"),
                     email=signal_data.get("email"),
                     contact_type=signal_data.get("contact_type"),
@@ -345,8 +422,9 @@ class PipelineOrchestrator:
                             entity["email_verified"] = True
                             verified_entities.append(entity)
                 
+                original_entity_count = len(cluster.get("entities", []))
                 cluster["entities"] = verified_entities
-                cluster["verification_rate"] = len(verified_entities) / len(cluster.get("entities", [])) if cluster.get("entities") else 0
+                cluster["verification_rate"] = len(verified_entities) / original_entity_count if original_entity_count > 0 else 0
                 
                 verified_clusters.append(cluster)
                 
@@ -537,13 +615,13 @@ class PipelineOrchestrator:
             name = signal.get("name")
             
             # Create merge key
-            if email:
-                # Use email as primary key
-                key = f"email:{email.lower()}"
-            elif name and email:
-                # Use domain + name combination
+            if name and email:
+                # Use domain + name combination when both are available
                 domain = email.split("@")[1] if "@" in email else "unknown"
                 key = f"domain_name:{domain}:{name.lower()}"
+            elif email:
+                # Use email as primary key when name is not available
+                key = f"email:{email.lower()}"
             elif name:
                 # Use name as fallback
                 key = f"name:{name.lower()}"

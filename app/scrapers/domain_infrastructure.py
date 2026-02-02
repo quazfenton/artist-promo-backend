@@ -42,33 +42,33 @@ def extract_contacts_from_whois(domain):
                             for email in value:
                                 normalized_email = decode_obfuscated_email(email)
                                 if validate_email_address(normalized_email):
-                                    whois_info['emails'].append(normalized_email)
+                                    whois_contacts['emails'].append(normalized_email)
                         elif isinstance(value, str):
                             normalized_email = decode_obfuscated_email(value)
                             if validate_email_address(normalized_email):
-                                whois_info['emails'].append(normalized_email)
-            
-            whois_info[f'{contact_type}_contact'] = contact_info
-        
+                                whois_contacts['emails'].append(normalized_email)
+
+            whois_contacts[f'{contact_type}_contact'] = contact_info
+
         # Extract organization
         org_fields = ['org', 'organization', 'registrant_org', 'admin_org', 'tech_org']
         for field in org_fields:
             if hasattr(w, field) and getattr(w, field):
-                whois_info['organization'] = getattr(w, field)
+                whois_contacts['organization'] = getattr(w, field)
                 break
-        
+
         # Extract nameservers
         if hasattr(w, 'name_servers') and w.name_servers:
             if isinstance(w.name_servers, list):
-                whois_info['nameservers'] = [ns.lower() for ns in w.name_servers]
+                whois_contacts['nameservers'] = [ns.lower() for ns in w.name_servers]
             elif isinstance(w.name_servers, str):
-                whois_info['nameservers'] = [w.name_servers.lower()]
-        
+                whois_contacts['nameservers'] = [w.name_servers.lower()]
+
         # Remove duplicates
-        whois_info['emails'] = list(set(whois_info['emails']))
-        whois_info['nameservers'] = list(set(whois_info['nameservers']))
-        
-        return whois_info
+        whois_contacts['emails'] = list(set(whois_contacts['emails']))
+        whois_contacts['nameservers'] = list(set(whois_contacts['nameservers']))
+
+        return whois_contacts
         
     except Exception as e:
         print(f"Error extracting WHOIS contacts for {domain}: {str(e)}")

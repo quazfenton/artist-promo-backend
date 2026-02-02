@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: artist_promo
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
       - "5432:5432"
     volumes:
@@ -25,7 +25,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -40,7 +40,7 @@ services:
   scrape-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -50,7 +50,7 @@ services:
   normalize-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -60,7 +60,7 @@ services:
   enrich-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -70,7 +70,7 @@ services:
   graph-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -80,7 +80,7 @@ services:
   outreach-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
       - EMAIL_TRANSPORT=${EMAIL_TRANSPORT:-smtp}
       - SMTP_SERVER=${SMTP_SERVER:-localhost}

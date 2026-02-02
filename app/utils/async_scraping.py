@@ -118,7 +118,8 @@ async def scrape_nitter(username: str) -> Dict[str, Any]:
         if follower_element:
             followers_text = follower_element.get_text(strip=True)
             # Remove commas and convert to int
-            followers = int(followers_text.replace(',', '')) if followers_text.isdigit() else 0
+            cleaned_text = followers_text.replace(',', '')
+            followers = int(cleaned_text) if cleaned_text.isdigit() else 0
         
         # Extract name
         name_element = soup.select_one(".profile-card-fullname")
@@ -229,7 +230,8 @@ async def scrape_imginn(username: str) -> Dict[str, Any]:
         followers = 0
         if follower_element:
             followers_text = follower_element.get_text(strip=True)
-            followers = int(followers_text.replace(',', '')) if followers_text.replace(',', '').isdigit() else 0
+            cleaned_text = followers_text.replace(',', '')
+            followers = int(cleaned_text) if cleaned_text.isdigit() else 0
         
         # Extract name
         name_element = soup.select_one(".profile-name")
@@ -283,7 +285,8 @@ async def scrape_proxitok(username: str) -> Dict[str, Any]:
         followers = 0
         if follower_element:
             followers_text = follower_element.get_text(strip=True)
-            followers = int(followers_text.replace(',', '')) if followers_text.replace(',', '').isdigit() else 0
+            cleaned_text = followers_text.replace(',', '')
+            followers = int(cleaned_text) if cleaned_text.isdigit() else 0
         
         # Extract name
         name_element = soup.select_one(".username")

@@ -259,51 +259,81 @@ def start_worker(worker_type, concurrency):
         from app.workers.scrape_worker import ScrapeWorker
         import asyncio
 
-        async def run_worker():
-            worker = ScrapeWorker()
-            await worker.run()
+        async def run_workers():
+            tasks = []
+            for i in range(concurrency):
+                worker = ScrapeWorker()
+                task = asyncio.create_task(worker.run())
+                tasks.append(task)
 
-        asyncio.run(run_worker())
+            # Wait for all workers to complete (they run indefinitely)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(run_workers())
 
     elif worker_type == "normalize":
         from app.workers.signal_normalizer_worker import SignalNormalizerWorker
         import asyncio
 
-        async def run_worker():
-            worker = SignalNormalizerWorker()
-            await worker.run()
+        async def run_workers():
+            tasks = []
+            for i in range(concurrency):
+                worker = SignalNormalizerWorker()
+                task = asyncio.create_task(worker.run())
+                tasks.append(task)
 
-        asyncio.run(run_worker())
+            # Wait for all workers to complete (they run indefinitely)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(run_workers())
 
     elif worker_type == "enrich":
         from app.workers.entity_resolver_worker import EntityResolverEnrichmentWorker
         import asyncio
 
-        async def run_worker():
-            worker = EntityResolverEnrichmentWorker()
-            await worker.run()
+        async def run_workers():
+            tasks = []
+            for i in range(concurrency):
+                worker = EntityResolverEnrichmentWorker()
+                task = asyncio.create_task(worker.run())
+                tasks.append(task)
 
-        asyncio.run(run_worker())
+            # Wait for all workers to complete (they run indefinitely)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(run_workers())
 
     elif worker_type == "graph":
         from app.workers.graph_cluster_worker import GraphBuilderClusterWorker
         import asyncio
 
-        async def run_worker():
-            worker = GraphBuilderClusterWorker()
-            await worker.run()
+        async def run_workers():
+            tasks = []
+            for i in range(concurrency):
+                worker = GraphBuilderClusterWorker()
+                task = asyncio.create_task(worker.run())
+                tasks.append(task)
 
-        asyncio.run(run_worker())
+            # Wait for all workers to complete (they run indefinitely)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(run_workers())
 
     elif worker_type == "outreach":
         from app.workers.outreach_worker import OutreachWorker
         import asyncio
 
-        async def run_worker():
-            worker = OutreachWorker()
-            await worker.run()
+        async def run_workers():
+            tasks = []
+            for i in range(concurrency):
+                worker = OutreachWorker()
+                task = asyncio.create_task(worker.run())
+                tasks.append(task)
 
-        asyncio.run(run_worker())
+            # Wait for all workers to complete (they run indefinitely)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        asyncio.run(run_workers())
 
     else:
         click.echo(f"Unknown worker type: {worker_type}")

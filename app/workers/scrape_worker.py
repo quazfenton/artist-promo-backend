@@ -99,10 +99,14 @@ class ScrapeWorker:
                     else:
                         results = scraper.safe_scrape(hashtag=params.get("hashtag"))
             elif platform == "web":
+                url = params.get("url")
+                if not url:
+                    raise ValueError("Missing required 'url' parameter for web scraping")
+
                 if inspect.iscoroutinefunction(scraper.safe_scrape):
-                    results = await scraper.safe_scrape(url=params["url"])
+                    results = await scraper.safe_scrape(url=url)
                 else:
-                    results = scraper.safe_scrape(url=params["url"])
+                    results = scraper.safe_scrape(url=url)
             else:
                 results = []
             

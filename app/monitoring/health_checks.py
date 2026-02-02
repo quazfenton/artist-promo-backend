@@ -259,8 +259,12 @@ class HealthChecker:
 
 class MetricsCollector:
     """Collect and store application metrics"""
-    
-    def __init__(self):
+
+    def __init__(self, system_monitor=None):
+        if system_monitor is None:
+            self.system_monitor = SystemMonitor()
+        else:
+            self.system_monitor = system_monitor
         self.redis_client = self.system_monitor.redis_client
     
     def increment_counter(self, name: str, value: int = 1):
@@ -319,51 +323,65 @@ class MetricsCollector:
             logger.error(f"Error getting metrics summary: {e}")
             return {"error": str(e)}
 
-# Global instances
-health_checker = HealthChecker()
-metrics_collector = MetricsCollector()
+# Global instances (initialized lazily)
+_health_checker = None
+_metrics_collector = None
+
+def get_health_checker() -> HealthChecker:
+    """Get the health checker instance (lazy initialization)"""
+    global _health_checker
+    if _health_checker is None:
+        _health_checker = HealthChecker()
+    return _health_checker
+
+def get_metrics_collector() -> MetricsCollector:
+    """Get the metrics collector instance (lazy initialization)"""
+    global _metrics_collector
+    if _metrics_collector is None:
+        _metrics_collector = MetricsCollector()
+    return _metrics_collector
 
 def get_health_status() -> Dict[str, Any]:
     """Get the current health status"""
-    return health_checker.get_comprehensive_health()
+    return get_health_checker().get_comprehensive_health()
 
 def get_system_metrics() -> Dict[str, Any]:
     """Get system metrics"""
-    return health_checker.system_monitor.get_system_metrics()
+    return get_health_checker().system_monitor.get_system_metrics()
 
 def get_database_metrics() -> Dict[str, Any]:
     """Get database metrics"""
-    return health_checker.system_monitor.get_database_metrics()
+    return get_health_checker().system_monitor.get_database_metrics()
 
 def get_redis_metrics() -> Dict[str, Any]:
     """Get Redis metrics"""
-    return health_checker.system_monitor.get_redis_metrics()
+    return get_health_checker().system_monitor.get_redis_metrics()
 
 def get_pipeline_metrics() -> Dict[str, Any]:
     """Get pipeline metrics"""
-    return health_checker.system_monitor.get_pipeline_metrics()
+    return get_health_checker().system_monitor.get_pipeline_metrics()
 
 def get_metrics_summary() -> Dict[str, Any]:
     """Get metrics summary"""
-    return metrics_collector.get_metrics_summary()
+    return get_metrics_collector().get_metrics_summary()
 
 # Convenience functions for metrics
 def increment_scrape_counter():
     """Increment scrape counter"""
-    metrics_collector.increment_counter("counter:scrapes_total")
+    get_metrics_collector().increment_counter("counter:scrapes_total")
 
 def increment_error_counter():
     """Increment error counter"""
-    metrics_collector.increment_counter("counter:errors_total")
+    get_metrics_collector().increment_counter("counter:errors_total")
 
 def record_response_time(response_time_ms: float):
     """Record API response time"""
-    metrics_collector.record_histogram("histogram:response_time_ms", response_time_ms)
+    get_metrics_collector().record_histogram("histogram:response_time_ms", response_time_ms)
 
 def set_active_users_count(count: int):
     """Set active users count"""
-    metrics_collector.set_gauge("gauge:active_users", count)
+    get_metrics_collector().set_gauge("gauge:active_users", count)
 
 def set_queue_length(queue_name: str, length: int):
     """Set queue length"""
-    metrics_collector.set_gauge(f"gauge:queue_length:{queue_name}", length)
+    get_metrics_collector().set_gauge(f"gauge:queue_length:{queue_name}", length)
