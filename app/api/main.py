@@ -5,7 +5,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, Depends, Req
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import csv
 import io
@@ -30,8 +30,12 @@ from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.auth_middleware import get_current_user, verify_api_key, AuthMiddleware
 from app.api.auth import router as auth_router
+from app.api.jobs import router as jobs_router
 from app.utils.error_handler import setup_error_handling_and_shutdown
 from app.utils.config_validator import validate_startup_config
+from app.utils.pipeline_orchestrator import get_pipeline_processor
+from app.utils.search_and_ingestion import get_webhook_ingestor, get_search_index
+from app.utils.confidence_calibration import get_confidence_decay_manager, get_source_trust_calibrator
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -93,6 +97,52 @@ app.include_router(analytics_router)
 app.include_router(webhooks_router)
 app.include_router(advanced_scrapers_router)
 app.include_router(intelligence_router)
+app.include_router(jobs_router)
+
+# Add webhook ingestion endpoint
+@app.post("/ingest")
+async def ingest_webhook(payload: Dict[str, Any], request: Request, api_key_valid: bool = Depends(verify_api_key)):
+    """Webhook endpoint for external signal ingestion"""
+    try:
+        from app.utils.search_and_ingestion import get_webhook_ingestor
+        ingestor = get_webhook_ingestor()
+
+        # Get source from headers or default to webhook
+        source = request.headers.get("X-Source", "webhook")
+
+        result = ingestor.ingest_payload(payload, source)
+        return result
+
+    except Exception as e:
+        logger.error(f"Webhook ingestion error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process webhook: {str(e)}")
+
+# Add search endpoint
+@app.post("/search/indexed")
+async def search_indexed_contacts(query: str, current_user: dict = Depends(get_current_user)):
+    """Search contacts in the local index"""
+    try:
+        from app.utils.search_and_ingestion import get_search_index
+        search_idx = get_search_index()
+
+        # Use the search methods available in the SearchIndex class
+        results = {
+            "emails": list(search_idx.search_email(query)),
+            "names": list(search_idx.search_name(query)),
+            "domains": list(search_idx.search_domain(query)),
+            "artists": list(search_idx.search_artist(query)),
+            "managers": list(search_idx.search_manager(query))
+        }
+
+        return {
+            "query": query,
+            "results": results,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 # Add metrics endpoint
 @app.get("/metrics")
@@ -155,29 +205,35 @@ async def scrape_spotify(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Scrape Spotify playlists and curators
+    Scrape Spotify playlists and curators (async via queue)
     """
     try:
-        scraper = SpotifyPlaylistScraper()
-        results = scraper.scrape(
-            genre=request.genre,
-            min_followers=request.min_followers,
-            limit=request.max_results
+        # Enqueue the scraping job
+        from app.workers.queue_adapter import enqueue_job
+
+        job_id = enqueue_job(
+            job_type="scrape:spotify_playlist",
+            params={
+                "genre": request.genre,
+                "min_followers": request.min_followers,
+                "limit": request.max_results
+            },
+            source="api",
+            priority=5,
+            user_id=current_user.get("user_id")
         )
-        
-        # Save to database in background
-        background_tasks.add_task(save_spotify_results, results, db)
-        
+
         return {
-            "status": "success",
+            "status": "queued",
             "scraper": "spotify",
-            "results_count": len(results),
-            "results": results
+            "job_id": job_id,
+            "estimated_completion": "5-15 minutes",
+            "message": "Scraping job queued successfully"
         }
-    
+
     except Exception as e:
-        logger.error(f"Spotify scrape error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Spotify scrape queue error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue scraping job: {str(e)}")
 
 
 @app.post("/scrape/youtube")
@@ -188,27 +244,34 @@ async def scrape_youtube(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Scrape YouTube channels for contact info
+    Scrape YouTube channels for contact info (async via queue)
     """
     try:
-        scraper = YouTubeChannelScraper()
-        results = scraper.scrape(
-            query=request.query or "hip hop playlist",
-            max_results=request.max_results
+        # Enqueue the scraping job
+        from app.workers.queue_adapter import enqueue_job
+
+        job_id = enqueue_job(
+            job_type="scrape:youtube_channel",
+            params={
+                "query": request.query or "hip hop playlist",
+                "max_results": request.max_results
+            },
+            source="api",
+            priority=5,
+            user_id=current_user.get("user_id")
         )
-        
-        background_tasks.add_task(save_youtube_results, results, db)
-        
+
         return {
-            "status": "success",
+            "status": "queued",
             "scraper": "youtube",
-            "results_count": len(results),
-            "results": results
+            "job_id": job_id,
+            "estimated_completion": "5-15 minutes",
+            "message": "Scraping job queued successfully"
         }
-    
+
     except Exception as e:
-        logger.error(f"YouTube scrape error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"YouTube scrape queue error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue scraping job: {str(e)}")
 
 
 @app.post("/scrape/instagram")
@@ -219,30 +282,39 @@ async def scrape_instagram(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Scrape Instagram profiles for contact info
+    Scrape Instagram profiles for contact info (async via queue)
     """
     try:
-        scraper = InstagramScraper()
-        
+        # Enqueue the scraping job
+        from app.workers.queue_adapter import enqueue_job
+
+        # Extract username from URL if provided
+        username = None
         if request.url:
-            # Extract username from URL
             username = request.url.split('/')[-2] if '/' in request.url else request.url
-            results = [scraper.scrape_profile(username)]
-        else:
-            results = scraper.find_music_curators()
-        
-        background_tasks.add_task(save_instagram_results, results, db)
-        
+
+        job_id = enqueue_job(
+            job_type="scrape:instagram_profile",
+            params={
+                "username": username,
+                "hashtag": request.query  # Using query field for hashtag
+            },
+            source="api",
+            priority=5,
+            user_id=current_user.get("user_id")
+        )
+
         return {
-            "status": "success",
+            "status": "queued",
             "scraper": "instagram",
-            "results_count": len(results),
-            "results": results
+            "job_id": job_id,
+            "estimated_completion": "5-15 minutes",
+            "message": "Scraping job queued successfully"
         }
-    
+
     except Exception as e:
-        logger.error(f"Instagram scrape error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Instagram scrape queue error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue scraping job: {str(e)}")
 
 
 @app.post("/scrape/web")
@@ -253,27 +325,36 @@ async def scrape_web(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Scrape a website for contact info
+    Scrape a website for contact info (async via queue)
     """
     if not request.url:
         raise HTTPException(status_code=400, detail="URL is required for web scraping")
-    
+
     try:
-        scraper = WebContactScraper()
-        result = scraper.scrape(request.url)
-        
-        if result:
-            background_tasks.add_task(save_web_result, result, db)
-        
+        # Enqueue the scraping job
+        from app.workers.queue_adapter import enqueue_job
+
+        job_id = enqueue_job(
+            job_type="scrape:web_contact",
+            params={
+                "url": request.url
+            },
+            source="api",
+            priority=5,
+            user_id=current_user.get("user_id")
+        )
+
         return {
-            "status": "success",
+            "status": "queued",
             "scraper": "web",
-            "result": result
+            "job_id": job_id,
+            "estimated_completion": "5-15 minutes",
+            "message": "Scraping job queued successfully"
         }
-    
+
     except Exception as e:
-        logger.error(f"Web scrape error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Web scrape queue error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue scraping job: {str(e)}")
 
 
 # ==================== CONTACT ENDPOINTS ====================
@@ -765,4 +846,6 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    host = os.getenv("HOST", "127.0.0.1")  # Default to localhost for security
+    uvicorn.run(app, host=host, port=8000)

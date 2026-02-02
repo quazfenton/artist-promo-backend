@@ -189,10 +189,10 @@ async def get_scraping_presets(current_user: dict = Depends(get_current_user)):
 async def run_scraping_preset(
     preset_name: str,
     request: Request,
-    artist_name: Optional[str] = None,
-    city: Optional[str] = None,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    artist_name: Optional[str] = None,
+    city: Optional[str] = None
 ):
     """Run a predefined scraping preset"""
     
