@@ -334,7 +334,7 @@ def convert_gps_to_decimal(gps_coords, gps_ref):
             def safe_rational_to_float(rational):
                 if isinstance(rational, tuple) and len(rational) >= 2 and rational[1] != 0:
                     return rational[0] / rational[1]
-                return 0  # Return 0 as default if invalid rational
+                return None
 
             if isinstance(degrees, tuple):
                 degrees = safe_rational_to_float(degrees)
@@ -342,6 +342,9 @@ def convert_gps_to_decimal(gps_coords, gps_ref):
                 minutes = safe_rational_to_float(minutes)
             if isinstance(seconds, tuple):
                 seconds = safe_rational_to_float(seconds)
+
+            if None in (degrees, minutes, seconds):
+                return None
 
             return dms_to_decimal(float(degrees), float(minutes), float(seconds), gps_ref)
     
