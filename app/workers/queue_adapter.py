@@ -52,10 +52,10 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
             logging.info(f"Duplicate job detected, returning existing job_id: {existing_job_id}")
             return existing_job_id
 
-    queue_name = QUEUE_NAME
-    enqueue(queue_name, job)
-    return job["job_id"]
-            if existing_job_id:
+        # No mapping found; continue to enqueue a new job
+        logging.getLogger(__name__).warning(
+            f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
+        )
                 return existing_job_id
             logging.getLogger(__name__).warning(
                 "Fingerprint %s seen before but no job_id mapping found", fp

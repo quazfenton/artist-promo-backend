@@ -165,7 +165,7 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
     contact_info['possible_names'] = list(set(contact_info['possible_names']))
     
     return contact_info
-
+                next_url = urljoin(response.url or image_url, next_url)
 def extract_contact_info_from_page(url):
     """
     Extract contact information from a webpage

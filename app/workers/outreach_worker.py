@@ -300,8 +300,7 @@ if __name__ == "__main__":
         try:
             try:
                 # Wait for all tasks to complete
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for result in results:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
                     if isinstance(result, Exception):
                         logger.error("Worker task failed", exc_info=result)
                         raise result

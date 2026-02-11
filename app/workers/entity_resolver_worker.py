@@ -166,7 +166,6 @@ class EntityResolverEnrichmentWorker:
                     enriched_data['hunter_enrichment'] = hunter_result
             except Exception as e:
                 logger.warning(f"Email enrichment failed for {contact_data.get('email')}: {str(e)}")
-
         # Additional enrichment can go here
         # e.g., WHOIS lookup for domains, social profile validation, etc.
 
@@ -183,12 +182,10 @@ class EntityResolverEnrichmentWorker:
             try:
                 # Find staging contacts associated with this normalization job
                 # We'll look for staging contacts that came from the raw signals of this job
-                # Using a more efficient database-level filter
-                from sqlalchemy import text
                 staging_contacts = db.query(StagingContact).filter(
-                    text("provenance->>'job_id' = :job_id OR provenance LIKE :job_pattern")
-                ).params(job_id=normalized_job_id, job_pattern=f'%{normalized_job_id}%').all()
-                
+                    StagingContact.provenance["job_id"].astext == normalized_job_id
+                ).all()
+
                 if not staging_contacts:
                     logger.info(f"No staging contacts found for job {normalized_job_id}")
                     return {
