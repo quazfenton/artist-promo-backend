@@ -166,7 +166,6 @@ class EntityResolverEnrichmentWorker:
                     enriched_data['hunter_enrichment'] = hunter_result
             except Exception as e:
                 logger.warning(f"Email enrichment failed for {contact_data.get('email')}: {str(e)}")
-
         # Additional enrichment can go here
         # e.g., WHOIS lookup for domains, social profile validation, etc.
 
@@ -185,13 +184,12 @@ class EntityResolverEnrichmentWorker:
                 # We'll look for staging contacts that came from the raw signals of this job
                 staging_contacts = db.query(StagingContact).filter(
                     StagingContact.provenance["job_id"].astext == normalized_job_id
-                staging_contacts = db.query(StagingContact).filter(
-                    StagingContact.provenance["job_id"].astext == normalized_job_id
                 ).all()
-                    return {
-                        "status": "completed",
-                        "resolved_count": 0,
-                        "processed_staging": 0
+
+                return {
+                    "status": "completed",
+                    "resolved_count": 0,
+                    "processed_staging": 0
                     }
                 
                 # Group staging contacts by merge key
