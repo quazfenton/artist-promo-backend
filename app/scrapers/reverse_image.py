@@ -132,11 +132,43 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
         import socket
         import ipaddress
         from urllib.parse import urlparse
+        import requests
 
-        # Validate URL to prevent SSRF
-        parsed_url = urlparse(image_url)
-        if parsed_url.scheme not in ['http', 'https']:
-            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+        def validate_url_for_ssrf(url):
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in ['http', 'https']:
+                raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+            if not parsed_url.hostname:
+                raise ValueError(f"URL does not contain a valid hostname: {url}")
+
+            try:
+                addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+                for res in addr_info:
+                    ip = ipaddress.ip_address(res[4][0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                        raise ValueError(f"Private/reserved IP address blocked: {ip}")
+            except socket.gaierror:
+                raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+            except Exception as e:
+                raise ValueError(f"IP validation error for {parsed_url.hostname}: {str(e)}")
+
+        # Validate initial URL
+        validate_url_for_ssrf(image_url)
+
+        # Download image with redirect validation
+        response = requests.get(image_url, allow_redirects=False, timeout=10)
+        while response.is_redirect:
+            next_url = response.headers['Location']
+            if next_url.startswith(('http://', 'https://')):
+                validate_url_for_ssrf(next_url)
+            else:
+                # Handle relative redirects
+                from urllib.parse import urljoin
+                next_url = urljoin(image_url, next_url)
+                validate_url_for_ssrf(next_url)
+
+            response = requests.get(next_url, allow_redirects=False, timeout=10)
 
         # Ensure a hostname is present for network requests
         if not parsed_url.hostname:

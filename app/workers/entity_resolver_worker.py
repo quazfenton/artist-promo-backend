@@ -186,10 +186,9 @@ class EntityResolverEnrichmentWorker:
                     StagingContact.provenance["job_id"].astext == normalized_job_id
                 ).all()
 
-                return {
-                    "status": "completed",
-                    "resolved_count": 0,
-                    "processed_staging": 0
+                staging_contacts = db.query(StagingContact).filter(
+                    StagingContact.provenance["job_id"].astext == normalized_job_id
+                ).all()
                     }
                 
                 # Group staging contacts by merge key
