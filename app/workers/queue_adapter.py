@@ -52,10 +52,11 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
             existing_job_id = get_job_id_by_fingerprint(fp)
             if existing_job_id:
                 return existing_job_id
-            # No mapping found; continue to enqueue a new job
-                logging.getLogger(__name__).warning(
-                    f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
-                )
+            # No mapping found; log warning and continue to enqueue a new job
+            logging.getLogger(__name__).warning(
+                "Fingerprint seen but no job_id mapping found; fingerprint=%s, job_type=%s; re-enqueueing",
+                fp, job_type,
+            )
     
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
@@ -109,12 +110,16 @@ def mark_seen(fp: str, job_id: str = None):
     r.zadd("job_fingerprints", {fp: datetime.utcnow().timestamp()})
     # Also store the mapping between fingerprint and job_id if provided
     if job_id:
-        r.set(f"fingerprint_to_job_id:{fp}", job_id)
+        r.set(f"fingerprint_to_job_id:{fp}", job_id, ex=30*24*3600)
 
 def cleanup_old_fingerprints(days_to_keep: int = 30):
     """Remove fingerprints older than specified days"""
     from datetime import datetime, timedelta
     cutoff = (datetime.utcnow() - timedelta(days=days_to_keep)).timestamp()
+    # Retrieve members to remove so we can also delete their mapping keys
+    stale = r.zrangebyscore("job_fingerprints", "-inf", cutoff)
+    for fp in stale:
+        r.delete(f"fingerprint_to_job_id:{fp}")
     r.zremrangebyscore("job_fingerprints", "-inf", cutoff)
 
 def get_job_id_by_fingerprint(fp: str) -> Optional[str]:
