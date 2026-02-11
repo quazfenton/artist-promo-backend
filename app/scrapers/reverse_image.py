@@ -127,11 +127,29 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
     """
     Extract contact information from reverse image search results
     """
-    contact_info = {
-        'emails': [],
-        'websites': [],
-        'social_profiles': [],
-        'possible_names': [],
+    try:
+        import base64
+        import socket
+        import ipaddress
+        from urllib.parse import urlparse
+
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(image_url)
+        if parsed_url.scheme not in ['http', 'https']:
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+        # Ensure a hostname is present for network requests
+        if not parsed_url.hostname:
+            raise ValueError(f"URL does not contain a valid hostname: {image_url}")
+
+        try:
+            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+            for res in addr_info:
+                ip = ipaddress.ip_address(res[4][0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
         'locations': []
     }
     
