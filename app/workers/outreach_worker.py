@@ -298,12 +298,14 @@ if __name__ == "__main__":
             asyncio.create_task(worker.run())
         
         try:
-            # Keep the main task running
-            while True:
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Shutting down workers...")
-            for worker in workers:
-                worker.stop()
-    
-    asyncio.run(main())
+            try:
+                # Wait for all tasks to complete
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.error("Worker task failed", exc_info=result)
+                        raise result
+            except KeyboardInterrupt:
+                logger.info("Shutting down workers...")
+                for worker in workers:
+                    worker.stop()

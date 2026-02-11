@@ -166,19 +166,19 @@ class EntityResolverEnrichmentWorker:
                     enriched_data['hunter_enrichment'] = hunter_result
             except Exception as e:
                 logger.warning(f"Email enrichment failed for {contact_data.get('email')}: {str(e)}")
-        
+
         # Additional enrichment can go here
         # e.g., WHOIS lookup for domains, social profile validation, etc.
-        
+
         return enriched_data
 
     async def process_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single entity resolution and enrichment job"""
         job_type = job["type"]
-        
+
         if job_type == "enrich:entity":
             normalized_job_id = job["params"].get("normalized_job_id")
-            
+
             db = SessionLocal()
             try:
                 # Find staging contacts associated with this normalization job

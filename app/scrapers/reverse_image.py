@@ -3,7 +3,10 @@ Reverse image search and EXIF data scraper
 """
 import requests
 import json
+from urllib.parse import urlparse
 from PIL import Image
+import socket
+import ipaddress
 from PIL.ExifTags import TAGS, GPSTAGS
 import io
 import re
@@ -132,7 +135,6 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
         'possible_names': [],
         'locations': []
     }
-    
     # Perform reverse image search
     search_results = []
     

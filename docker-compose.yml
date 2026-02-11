@@ -70,7 +70,7 @@ services:
   graph-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password} @postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -80,7 +80,7 @@ services:
   outreach-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password} @postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
       - EMAIL_TRANSPORT=${EMAIL_TRANSPORT:-smtp}
       - SMTP_SERVER=${SMTP_SERVER:-localhost}
