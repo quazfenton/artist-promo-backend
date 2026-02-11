@@ -17,7 +17,6 @@ def extract_exif_data(image_path_or_url):
     import socket
     import ipaddress
     from urllib.parse import urlparse
-    import socket
     
     try:
         # Handle both local paths and URLs
@@ -108,6 +107,31 @@ def reverse_image_search_google_vision(image_url, api_key):
     """
     try:
         import base64
+        import socket
+        import ipaddress
+        from urllib.parse import urlparse
+        
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(image_url)
+        if parsed_url.scheme not in ['http', 'https']:
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+        
+        # Ensure a hostname is present for network requests
+        if not parsed_url.hostname:
+            raise ValueError(f"URL does not contain a valid hostname: {image_url}")
+
+        try:
+            # Resolve hostname to IP addresses. The 'None' for service (port) is intentional,
+            # as we only care about the IP address for SSRF protection, not port-level resolution here.
+            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+            for res in addr_info:
+                ip = ipaddress.ip_address(res[4][0]) # res[4][0] is the IP address string
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+        except Exception as e: # Catch any other unexpected errors during IP validation
+            raise ValueError(f"IP validation error for {parsed_url.hostname}: {str(e)}")
         
         # Download image content
         response = requests.get(image_url, timeout=30)

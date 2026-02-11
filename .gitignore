@@ -40,7 +40,7 @@ env/
 *~
 .kiro/*
 .qwen/*
-.kiro/*
+.claude/
 .claude/
 .cursor/
 .gemini/

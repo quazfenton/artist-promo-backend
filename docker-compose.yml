@@ -82,9 +82,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
-      - EMAIL_TRANSPORT=${EMAIL_TRANSPORT?set EMAIL_TRANSPORT in .env}
-      - SMTP_SERVER=${SMTP_SERVER?set SMTP_SERVER in .env}
-      - SMTP_PORT=${SMTP_PORT?set SMTP_PORT in .env}
+      - EMAIL_TRANSPORT=${EMAIL_TRANSPORT:-smtp}
+      - SMTP_SERVER=${SMTP_SERVER:-}
+      - SMTP_PORT=${SMTP_PORT:-}
       - SMTP_USERNAME=${SMTP_USERNAME}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SENDER_EMAIL=${SENDER_EMAIL}
