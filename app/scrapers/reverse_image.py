@@ -170,18 +170,8 @@ def extract_contact_info_from_page(url):
     """
     Extract contact information from a webpage
     """
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        contact_data = {
+        # Re-validate the final URL after following any redirects
+        validate_url_for_ssrf(response.url)
             'emails': [],
             'social_profiles': [],
             'names': []

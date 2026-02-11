@@ -25,10 +25,13 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         priority: Priority level (1-9)
         dedupe_key: Key to prevent duplicate jobs
         user_id: ID of user who triggered the job
-    
+
     Returns:
         job_id: Unique identifier for the job
     """
+    import logging
+    from app.config import QUEUE_NAME
+
     job = {
         "job_id": str(uuid.uuid4()),
         "type": job_type,
@@ -39,13 +42,19 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         "created_at": datetime.utcnow().isoformat() + "Z",
         "user_id": user_id
     }
-    
+
     # Check for duplicate job if dedupe_key is provided
     if dedupe_key:
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
         if seen_before(fp):
             existing_job_id = get_job_id_by_fingerprint(fp)
+            logging.info(f"Duplicate job detected, returning existing job_id: {existing_job_id}")
+            return existing_job_id
+
+    queue_name = QUEUE_NAME
+    enqueue(queue_name, job)
+    return job["job_id"]
             if existing_job_id:
                 return existing_job_id
             logging.getLogger(__name__).warning(
