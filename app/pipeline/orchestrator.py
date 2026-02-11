@@ -363,8 +363,7 @@ class PipelineOrchestrator:
                     social_handles=entity_data.get("social_handles"),
                     follower_count=entity_data.get("follower_count", 0),
                     bio=entity_data.get("bio"),
-                    source_urls=entity_data.get("source_urls", []),
-                    provenance=entity_data.get("provenance", {})
+                    source_urls=entity_data.get("source_urls", [])
                 )
                 db.add(resolved_entity)
             db.commit()

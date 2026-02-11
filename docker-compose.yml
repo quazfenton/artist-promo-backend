@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: artist_promo
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -25,13 +25,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_SECRET=${JWT_SECRET?set JWT_SECRET in .env}
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
       - REFRESH_TOKEN_EXPIRE_DAYS=7
       - RATE_LIMIT_PER_MINUTE=60
-      - API_KEYS=${API_KEYS:-default_api_key}
+      - API_KEYS=${API_KEYS?set API_KEYS in .env}
     depends_on:
       - postgres
       - redis
@@ -40,7 +40,7 @@ services:
   scrape-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -50,7 +50,7 @@ services:
   normalize-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -60,7 +60,7 @@ services:
   enrich-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -70,7 +70,7 @@ services:
   graph-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
@@ -80,11 +80,11 @@ services:
   outreach-worker:
     build: .
     environment:
-      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD:-password}@postgres:5432/artist_promo
+      - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD?set POSTGRES_PASSWORD in .env}@postgres:5432/artist_promo
       - REDIS_URL=redis://redis:6379/0
-      - EMAIL_TRANSPORT=${EMAIL_TRANSPORT:-smtp}
-      - SMTP_SERVER=${SMTP_SERVER:-localhost}
-      - SMTP_PORT=${SMTP_PORT:-587}
+      - EMAIL_TRANSPORT=${EMAIL_TRANSPORT?set EMAIL_TRANSPORT in .env}
+      - SMTP_SERVER=${SMTP_SERVER?set SMTP_SERVER in .env}
+      - SMTP_PORT=${SMTP_PORT?set SMTP_PORT in .env}
       - SMTP_USERNAME=${SMTP_USERNAME}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SENDER_EMAIL=${SENDER_EMAIL}

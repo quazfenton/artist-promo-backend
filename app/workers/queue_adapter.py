@@ -45,8 +45,16 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
         if seen_before(fp):
-            # Return the same job_id to avoid duplicates
-            return job["job_id"]  # Return existing job_id to avoid creating duplicate
+            # Need to return the existing job_id that corresponds to this fingerprint
+            # Since we can't directly map fingerprints to job_ids with the current implementation,
+            # we need to store this mapping. For now, we'll return a special value to indicate duplicate
+            # But ideally we should enhance the system to track which job_id corresponds to each fingerprint
+            existing_job_id = get_job_id_by_fingerprint(fp)
+            if existing_job_id:
+                return existing_job_id
+            else:
+                # Fallback: return the same job_id to avoid creating duplicate
+                return job["job_id"]  # Return existing job_id to avoid creating duplicate
     
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
@@ -68,7 +76,7 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
     
     # If dedupe_key is provided, mark this job as seen
     if dedupe_key:
-        mark_seen(fp)
+        mark_seen(fp, job["job_id"])
     
     return job["job_id"]
 
@@ -91,11 +99,20 @@ def seen_before(fp: str) -> bool:
     """
     return r.sismember("job_fingerprints", fp)
 
-def mark_seen(fp: str):
+def mark_seen(fp: str, job_id: str = None):
     """
     Mark a job fingerprint as seen
     """
     r.sadd("job_fingerprints", fp)
+    # Also store the mapping between fingerprint and job_id if provided
+    if job_id:
+        r.set(f"fingerprint_to_job_id:{fp}", job_id)
+
+def get_job_id_by_fingerprint(fp: str) -> Optional[str]:
+    """
+    Get the job_id associated with a fingerprint
+    """
+    return r.get(f"fingerprint_to_job_id:{fp}")
 
 def get_job_status(job_id: str) -> Dict[str, Any]:
     """

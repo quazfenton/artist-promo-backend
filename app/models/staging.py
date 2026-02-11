@@ -1,11 +1,9 @@
 """Staging and graph models for the pipeline"""
 from sqlalchemy import Column, Integer, String, JSON, DateTime, Boolean, Float, ForeignKey, Index
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
-
-Base = declarative_base()
+from app.models.database import Base
 
 class ScraperRawSignal(Base):
     """Raw outputs of scrapers"""

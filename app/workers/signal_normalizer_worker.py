@@ -272,19 +272,22 @@ if __name__ == "__main__":
     async def main():
         # Create and run worker(s)
         workers = []
-        for i in range(args.concurrency):
+        tasks = []
+        for _ in range(args.concurrency):
             worker = SignalNormalizerWorker()
             workers.append(worker)
-            # Run each worker in a separate task
-            asyncio.create_task(worker.run())
-        
+            # Run each worker in a separate task and store the reference
+            task = asyncio.create_task(worker.run())
+            tasks.append(task)
+
         try:
-            # Keep the main task running
-            while True:
-                await asyncio.sleep(1)
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks)
         except KeyboardInterrupt:
             logger.info("Shutting down workers...")
             for worker in workers:
                 worker.stop()
+            # Wait for tasks to complete gracefully
+            await asyncio.gather(*tasks, return_exceptions=True)
     
     asyncio.run(main())

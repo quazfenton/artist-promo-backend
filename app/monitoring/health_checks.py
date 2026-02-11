@@ -17,10 +17,9 @@ logger = logging.getLogger(__name__)
 
 class SystemMonitor:
     """Monitor system resources and performance"""
-    
+
     def __init__(self):
         self.redis_client = self._get_redis_client()
-        self.db = next(get_db())
         
     def _get_redis_client(self):
         """Initialize Redis client"""
@@ -64,27 +63,32 @@ class SystemMonitor:
     def get_database_metrics(self) -> Dict[str, Any]:
         """Get database metrics"""
         try:
-            # Get basic stats
-            contact_count = self.db.query(Contact).count()
-            playlist_count = self.db.query(Playlist).count()
-            venue_count = self.db.query(Venue).count()
-            
-            # Get recent activity
-            recent_contacts = self.db.query(Contact).filter(
-                Contact.created_at > datetime.utcnow() - timedelta(hours=24)
-            ).count()
-            
-            # Get database connection info
-            result = self.db.execute(text("SELECT 1")).fetchone()
-            
-            return {
-                "contact_count": contact_count,
-                "playlist_count": playlist_count,
-                "venue_count": venue_count,
-                "recent_contacts_24h": recent_contacts,
-                "connection_status": "healthy" if result else "unreachable",
-                "timestamp": datetime.utcnow().isoformat()
-            }
+            # Get a fresh database session for this operation
+            db = next(get_db())
+            try:
+                # Get basic stats
+                contact_count = db.query(Contact).count()
+                playlist_count = db.query(Playlist).count()
+                venue_count = db.query(Venue).count()
+
+                # Get recent activity
+                recent_contacts = db.query(Contact).filter(
+                    Contact.created_at > datetime.utcnow() - timedelta(hours=24)
+                ).count()
+
+                # Get database connection info
+                result = db.execute(text("SELECT 1")).fetchone()
+
+                return {
+                    "contact_count": contact_count,
+                    "playlist_count": playlist_count,
+                    "venue_count": venue_count,
+                    "recent_contacts_24h": recent_contacts,
+                    "connection_status": "healthy" if result else "unreachable",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            finally:
+                db.close()
         except Exception as e:
             logger.error(f"Error getting database metrics: {e}")
             return {"error": str(e)}

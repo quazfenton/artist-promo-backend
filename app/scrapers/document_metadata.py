@@ -295,6 +295,43 @@ def extract_emails_from_image_metadata(image_path_or_url):
             'size': None
         }
 
+def _normalize_document_contacts(result: dict) -> dict:
+    """
+    Normalize extractor outputs to have consistent keys 'emails' and 'metadata'
+    """
+    if result is None:
+        return {'emails': [], 'metadata': {}, 'error': 'Extractor returned None'}
+    
+    if "emails" not in result and "all_emails" in result:
+        result["emails"] = result["all_emails"]
+    elif "emails" not in result:
+        result["emails"] = result.get("metadata_emails", []) + result.get("content_emails", [])
+        
+    if "metadata" not in result:
+        if "properties" in result:
+            result["metadata"] = result["properties"]
+        elif "exif_data" in result:
+            result["metadata"] = result["exif_data"]
+        else:
+            # Create metadata from available fields
+            result["metadata"] = {}
+            for key, value in result.items():
+                if key not in ["emails", "all_emails", "metadata_emails", "content_emails", "error"]:
+                    result["metadata"][key] = value
+    
+    # Ensure emails is a list
+    if isinstance(result.get("emails"), str):
+        result["emails"] = [result["emails"]]
+    elif result.get("emails") is None:
+        result["emails"] = []
+        
+    # Ensure metadata is a dict
+    if result.get("metadata") is None:
+        result["metadata"] = {}
+    
+    return result
+
+
 def extract_contact_info_from_document(document_url):
     """
     Extract contact information from various document types
@@ -303,38 +340,38 @@ def extract_contact_info_from_document(document_url):
         # Determine document type from URL or content
         response = requests.get(document_url, timeout=30)
         response.raise_for_status()
-        
+
         # Get file extension
         parsed_url = urlparse(document_url)
         file_ext = os.path.splitext(parsed_url.path)[1].lower()
-        
+
         if file_ext == '.pdf':
-            return extract_emails_from_pdf_metadata(document_url)
+            return _normalize_document_contacts(extract_emails_from_pdf_metadata(document_url))
         elif file_ext == '.docx':
-            return extract_emails_from_docx_metadata(document_url)
+            return _normalize_document_contacts(extract_emails_from_docx_metadata(document_url))
         elif file_ext == '.pptx':
-            return extract_emails_from_pptx_metadata(document_url)
+            return _normalize_document_contacts(extract_emails_from_pptx_metadata(document_url))
         elif file_ext in ['.jpg', '.jpeg', '.png', '.tiff', '.bmp']:
-            return extract_emails_from_image_metadata(document_url)
+            return _normalize_document_contacts(extract_emails_from_image_metadata(document_url))
         else:
             # Try to determine from content type
             content_type = response.headers.get('content-type', '').lower()
-            
+
             if 'pdf' in content_type:
-                return extract_emails_from_pdf_metadata(document_url)
+                return _normalize_document_contacts(extract_emails_from_pdf_metadata(document_url))
             elif 'word' in content_type or 'docx' in content_type:
-                return extract_emails_from_docx_metadata(document_url)
+                return _normalize_document_contacts(extract_emails_from_docx_metadata(document_url))
             elif 'powerpoint' in content_type or 'pptx' in content_type:
-                return extract_emails_from_pptx_metadata(document_url)
+                return _normalize_document_contacts(extract_emails_from_pptx_metadata(document_url))
             elif 'image' in content_type:
-                return extract_emails_from_image_metadata(document_url)
+                return _normalize_document_contacts(extract_emails_from_image_metadata(document_url))
             else:
                 return {
                     'emails': [],
                     'metadata': {},
                     'error': f'Unsupported document type: {content_type}'
                 }
-                
+
     except Exception as e:
         print(f"Error extracting contact info from document {document_url}: {str(e)}")
         return {

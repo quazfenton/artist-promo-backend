@@ -38,6 +38,14 @@ env/
 *.swp
 *.swo
 *~
+.kiro/*
+.qwen/*
+.kiro/*
+.claude/
+.cursor/
+.gemini/
+.opencode/
+.roo/
 
 # Database
 *.db

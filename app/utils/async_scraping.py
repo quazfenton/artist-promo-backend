@@ -92,26 +92,29 @@ def get_random_instance(instances: List[str]) -> str:
     """
     return random.choice(instances)
 
-async def scrape_nitter(username: str) -> Dict[str, Any]:
+async def scrape_nitter(username: str, session: aiohttp.ClientSession = None) -> Dict[str, Any]:
     """
     Scrape user data from Nitter (Twitter alternative)
     """
     base = get_random_instance(NITTER_INSTANCES)
     url = f"{base}/{username}"
-    
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+
+    should_close = session is None
+    if session is None:
+        session = aiohttp.ClientSession(headers=HEADERS)
+    try:
         html = await fetch_async(session, url)
-        
+
         if not html:
             return {"error": f"Failed to fetch from {url}"}
-        
+
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
-        
+
         # Extract bio
         bio_element = soup.select_one(".profile-bio")
         bio = bio_element.get_text(" ", strip=True) if bio_element else ""
-        
+
         # Extract follower count
         follower_element = soup.select_one("li.followers .profile-stat-num")
         followers = 0
@@ -120,23 +123,23 @@ async def scrape_nitter(username: str) -> Dict[str, Any]:
             # Remove commas and convert to int
             cleaned_text = followers_text.replace(',', '')
             followers = int(cleaned_text) if cleaned_text.isdigit() else 0
-        
+
         # Extract name
         name_element = soup.select_one(".profile-card-fullname")
         name = name_element.get_text(strip=True) if name_element else username
-        
+
         # Extract external links
         links = []
         for link in soup.select(".profile-links a[href^='http']"):
             href = link.get('href')
             if href:
                 links.append(href)
-        
+
         # Extract emails from bio
         import re
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = list(set(re.findall(email_pattern, bio)))
-        
+
         return {
             "platform": "twitter",
             "username": username,
@@ -147,27 +150,33 @@ async def scrape_nitter(username: str) -> Dict[str, Any]:
             "follower_count": followers,
             "source": url
         }
+    finally:
+        if should_close:
+            await session.close()
 
-async def scrape_invidious_channel(channel_id: str) -> Dict[str, Any]:
+async def scrape_invidious_channel(channel_id: str, session: aiohttp.ClientSession = None) -> Dict[str, Any]:
     """
     Scrape YouTube channel data from Invidious
     """
     base = get_random_instance(INVIDIOUS_INSTANCES)
     url = f"{base}/channel/{channel_id}/about"
-    
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+
+    should_close = session is None
+    if session is None:
+        session = aiohttp.ClientSession(headers=HEADERS)
+    try:
         html = await fetch_async(session, url)
-        
+
         if not html:
             return {"error": f"Failed to fetch from {url}"}
-        
+
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
-        
+
         # Extract channel about info
         about_element = soup.select_one(".channel-about")
         about_text = about_element.get_text(" ", strip=True) if about_element else ""
-        
+
         # Extract subscriber count
         sub_count_element = soup.select_one(".subscriber-count")
         subscribers = 0
@@ -183,19 +192,19 @@ async def scrape_invidious_channel(channel_id: str) -> Dict[str, Any]:
                 elif 'M' in sub_text.upper():
                     num *= 1000000
                 subscribers = int(num)
-        
+
         # Extract external links
         links = []
         for link in soup.select("a[href^='http']"):
             href = link.get('href')
             if href:
                 links.append(href)
-        
+
         # Extract emails from about text
         import re
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = list(set(re.findall(email_pattern, about_text)))
-        
+
         return {
             "platform": "youtube",
             "channel_id": channel_id,
@@ -205,26 +214,32 @@ async def scrape_invidious_channel(channel_id: str) -> Dict[str, Any]:
             "subscriber_count": subscribers,
             "source": url
         }
+    finally:
+        if should_close:
+            await session.close()
 
-async def scrape_imginn(username: str) -> Dict[str, Any]:
+async def scrape_imginn(username: str, session: aiohttp.ClientSession = None) -> Dict[str, Any]:
     """
     Scrape Instagram profile from Imginn
     """
     url = f"https://imginn.com/{username}/"
-    
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+
+    should_close = session is None
+    if session is None:
+        session = aiohttp.ClientSession(headers=HEADERS)
+    try:
         html = await fetch_async(session, url)
-        
+
         if not html:
             return {"error": f"Failed to fetch from {url}"}
-        
+
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
-        
+
         # Extract bio
         bio_element = soup.select_one(".bio")
         bio = bio_element.get_text(" ", strip=True) if bio_element else ""
-        
+
         # Extract follower count
         follower_element = soup.select_one(".followers .count")
         followers = 0
@@ -232,11 +247,11 @@ async def scrape_imginn(username: str) -> Dict[str, Any]:
             followers_text = follower_element.get_text(strip=True)
             cleaned_text = followers_text.replace(',', '')
             followers = int(cleaned_text) if cleaned_text.isdigit() else 0
-        
+
         # Extract name
         name_element = soup.select_one(".profile-name")
         name = name_element.get_text(strip=True) if name_element else username
-        
+
         # Extract external link
         links = []
         external_link_element = soup.select_one("a[href^='http']")
@@ -244,12 +259,12 @@ async def scrape_imginn(username: str) -> Dict[str, Any]:
             href = external_link_element.get('href')
             if href:
                 links.append(href)
-        
+
         # Extract emails from bio
         import re
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = list(set(re.findall(email_pattern, bio)))
-        
+
         return {
             "platform": "instagram",
             "username": username,
@@ -260,26 +275,32 @@ async def scrape_imginn(username: str) -> Dict[str, Any]:
             "follower_count": followers,
             "source": url
         }
+    finally:
+        if should_close:
+            await session.close()
 
-async def scrape_proxitok(username: str) -> Dict[str, Any]:
+async def scrape_proxitok(username: str, session: aiohttp.ClientSession = None) -> Dict[str, Any]:
     """
     Scrape TikTok profile from ProxiTok
     """
     url = f"https://proxitok.pabloferreiro.es/@{username}"
-    
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+
+    should_close = session is None
+    if session is None:
+        session = aiohttp.ClientSession(headers=HEADERS)
+    try:
         html = await fetch_async(session, url)
-        
+
         if not html:
             return {"error": f"Failed to fetch from {url}"}
-        
+
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
-        
+
         # Extract bio
         bio_element = soup.select_one(".bio")
         bio = bio_element.get_text(" ", strip=True) if bio_element else ""
-        
+
         # Extract follower count
         follower_element = soup.select_one(".followers .count")
         followers = 0
@@ -287,23 +308,23 @@ async def scrape_proxitok(username: str) -> Dict[str, Any]:
             followers_text = follower_element.get_text(strip=True)
             cleaned_text = followers_text.replace(',', '')
             followers = int(cleaned_text) if cleaned_text.isdigit() else 0
-        
+
         # Extract name
         name_element = soup.select_one(".username")
         name = name_element.get_text(strip=True) if name_element else username
-        
+
         # Extract external links
         links = []
         for link in soup.select("a[href^='http']"):
             href = link.get('href')
             if href:
                 links.append(href)
-        
+
         # Extract emails from bio
         import re
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = list(set(re.findall(email_pattern, bio)))
-        
+
         return {
             "platform": "tiktok",
             "username": username,
@@ -314,48 +335,57 @@ async def scrape_proxitok(username: str) -> Dict[str, Any]:
             "follower_count": followers,
             "source": url
         }
+    finally:
+        if should_close:
+            await session.close()
 
-async def scrape_libreddit_subreddit(subreddit: str, limit: int = 5) -> Dict[str, Any]:
+async def scrape_libreddit_subreddit(subreddit: str, session: aiohttp.ClientSession = None, limit: int = 5) -> Dict[str, Any]:
     """
     Scrape subreddit from Libreddit
     """
     base = get_random_instance(LIBREDDIT_INSTANCES)
     url = f"{base}/r/{subreddit}"
-    
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+
+    should_close = session is None
+    if session is None:
+        session = aiohttp.ClientSession(headers=HEADERS)
+    try:
         html = await fetch_async(session, url)
-        
+
         if not html:
             return {"error": f"Failed to fetch from {url}"}
-        
+
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
-        
+
         # Extract posts
         posts = soup.select("div.post")[:limit]
-        
+
         results = []
         for post in posts:
             text = post.get_text(" ", strip=True)[:500]  # Limit text length
-            
+
             # Extract emails from post
             import re
             email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
             emails = list(set(re.findall(email_pattern, text)))
-            
+
             if emails:
                 results.append({
                     "text": text,
                     "emails": emails,
                     "source": url
                 })
-        
+
         return {
             "platform": "reddit",
             "subreddit": subreddit,
             "matches": results,
             "source": url
         }
+    finally:
+        if should_close:
+            await session.close()
 
 async def run_async_tasks(tasks: List[Callable]) -> List[Any]:
     """
@@ -366,16 +396,13 @@ async def run_async_tasks(tasks: List[Callable]) -> List[Any]:
         coros = []
         for task in tasks:
             if callable(task):
-                # If task is a function that takes session, call it
-                if task.__code__.co_argcount > 0:  # Check if function expects arguments
-                    coros.append(task(session))
-                else:
-                    coros.append(task())
+                # All tasks now expect a session parameter
+                coros.append(task(session))
             else:
                 coros.append(task)
-        
+
         results = await asyncio.gather(*coros, return_exceptions=True)
-        
+
         # Filter out exceptions
         processed_results = []
         for result in results:
@@ -384,7 +411,7 @@ async def run_async_tasks(tasks: List[Callable]) -> List[Any]:
                 processed_results.append({"error": str(result)})
             else:
                 processed_results.append(result)
-        
+
         return processed_results
 
 async def scrape_all_platforms(handles: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -392,22 +419,22 @@ async def scrape_all_platforms(handles: Dict[str, str]) -> List[Dict[str, Any]]:
     Scrape all platforms concurrently based on provided handles
     """
     tasks = []
-    
+
     if "twitter" in handles:
-        tasks.append(lambda s: scrape_nitter(handles["twitter"]))
-    
+        tasks.append(lambda s: scrape_nitter(handles["twitter"], s))
+
     if "youtube" in handles:
-        tasks.append(lambda s: scrape_invidious_channel(handles["youtube"]))
-    
+        tasks.append(lambda s: scrape_invidious_channel(handles["youtube"], s))
+
     if "instagram" in handles:
-        tasks.append(lambda s: scrape_imginn(handles["instagram"]))
-    
+        tasks.append(lambda s: scrape_imginn(handles["instagram"], s))
+
     if "tiktok" in handles:
-        tasks.append(lambda s: scrape_proxitok(handles["tiktok"]))
-    
+        tasks.append(lambda s: scrape_proxitok(handles["tiktok"], s))
+
     if "reddit" in handles:
-        tasks.append(lambda s: scrape_libreddit_subreddit(handles["reddit"]))
-    
+        tasks.append(lambda s: scrape_libreddit_subreddit(handles["reddit"], s))
+
     if tasks:
         return await run_async_tasks(tasks)
     else:
@@ -448,8 +475,25 @@ async def run_enrichment_pipeline(contacts: List[Dict[str, Any]]) -> List[Dict[s
     """
     Run enrichment pipeline on multiple contacts concurrently
     """
-    tasks = [lambda s, c=c: enrich_contact_data(c) for c in contacts]
-    return await run_async_tasks(tasks)
+    # Create tasks that don't require session (enrich_contact_data doesn't use session)
+    # We'll create a dummy task that just returns the enrichment result
+    async def enrich_wrapper(contact):
+        return await enrich_contact_data(contact)
+    
+    async with aiohttp.ClientSession(headers=HEADERS) as session:
+        coros = [enrich_wrapper(c) for c in contacts]
+        results = await asyncio.gather(*coros, return_exceptions=True)
+
+        # Filter out exceptions
+        processed_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                print(f"Enrichment task failed: {result}")
+                processed_results.append({"error": str(result)})
+            else:
+                processed_results.append(result)
+
+        return processed_results
 
 async def scrape_with_fallback(primary_url: str, fallback_urls: List[str]) -> Dict[str, Any]:
     """

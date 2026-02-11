@@ -267,7 +267,8 @@ def start_worker(worker_type, concurrency):
                 tasks.append(task)
 
             # Wait for all workers to complete (they run indefinitely)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Don't use return_exceptions=True to ensure failures are visible
+            await asyncio.gather(*tasks)
 
         asyncio.run(run_workers())
 
@@ -283,7 +284,8 @@ def start_worker(worker_type, concurrency):
                 tasks.append(task)
 
             # Wait for all workers to complete (they run indefinitely)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Don't use return_exceptions=True to ensure failures are visible
+            await asyncio.gather(*tasks)
 
         asyncio.run(run_workers())
 
@@ -299,7 +301,8 @@ def start_worker(worker_type, concurrency):
                 tasks.append(task)
 
             # Wait for all workers to complete (they run indefinitely)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Don't use return_exceptions=True to ensure failures are visible
+            await asyncio.gather(*tasks)
 
         asyncio.run(run_workers())
 
@@ -315,7 +318,8 @@ def start_worker(worker_type, concurrency):
                 tasks.append(task)
 
             # Wait for all workers to complete (they run indefinitely)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Don't use return_exceptions=True to ensure failures are visible
+            await asyncio.gather(*tasks)
 
         asyncio.run(run_workers())
 
@@ -331,7 +335,8 @@ def start_worker(worker_type, concurrency):
                 tasks.append(task)
 
             # Wait for all workers to complete (they run indefinitely)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Don't use return_exceptions=True to ensure failures are visible
+            await asyncio.gather(*tasks)
 
         asyncio.run(run_workers())
 
