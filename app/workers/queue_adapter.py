@@ -52,9 +52,10 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
             existing_job_id = get_job_id_by_fingerprint(fp)
             if existing_job_id:
                 return existing_job_id
-            else:
-                # Fallback: return the same job_id to avoid creating duplicate
-                return job["job_id"]  # Return existing job_id to avoid creating duplicate
+            # No mapping found; continue to enqueue a new job
+                logging.getLogger(__name__).warning(
+                    f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
+                )
     
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type

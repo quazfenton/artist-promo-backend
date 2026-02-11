@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
         try:
             # Wait for all tasks to complete
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks, return_exceptions=True)
         except KeyboardInterrupt:
             logger.info("Shutting down workers...")
             for worker in workers:
