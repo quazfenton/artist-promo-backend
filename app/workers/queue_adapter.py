@@ -98,16 +98,24 @@ def seen_before(fp: str) -> bool:
     """
     Check if we've seen a job with this fingerprint before
     """
-    return r.sismember("job_fingerprints", fp)
+    # Use sorted set with timestamp scores for TTL-like behavior
+    return r.zscore("job_fingerprints", fp) is not None
 
 def mark_seen(fp: str, job_id: str = None):
     """
     Mark a job fingerprint as seen
     """
-    r.sadd("job_fingerprints", fp)
+    # Store with timestamp score, allowing cleanup of old entries
+    r.zadd("job_fingerprints", {fp: datetime.utcnow().timestamp()})
     # Also store the mapping between fingerprint and job_id if provided
     if job_id:
         r.set(f"fingerprint_to_job_id:{fp}", job_id)
+
+def cleanup_old_fingerprints(days_to_keep: int = 30):
+    """Remove fingerprints older than specified days"""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.utcnow() - timedelta(days=days_to_keep)).timestamp()
+    r.zremrangebyscore("job_fingerprints", "-inf", cutoff)
 
 def get_job_id_by_fingerprint(fp: str) -> Optional[str]:
     """

@@ -710,7 +710,7 @@ class PipelineOrchestrator:
         email = entity.get("email")
         if email and "@" in email:
             domain = email.split("@")[1]
-            domain_analysis = await comprehensive_domain_analysis(domain)
+            domain_analysis = await asyncio.to_thread(comprehensive_domain_analysis, domain)
             
             # Add domain reputation info
             enriched["domain_reputation"] = domain_analysis.get("reputation_score", 50)
