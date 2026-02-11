@@ -287,23 +287,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Outreach Worker")
     parser.add_argument("--concurrency", type=int, default=1, help="Number of concurrent workers")
     args = parser.parse_args()
-    
+
     async def main():
         # Create and run worker(s)
         workers = []
+        tasks = []
         for i in range(args.concurrency):
             worker = OutreachWorker()
             workers.append(worker)
             # Run each worker in a separate task
-            asyncio.create_task(worker.run())
-        
+            tasks.append(asyncio.create_task(worker.run()))
+
         try:
-            # Keep the main task running
-            while True:
-                await asyncio.sleep(1)
-        except KeyboardInterrupt:
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.error(f"Worker task failed: {e}")
+            raise
+        finally:
             logger.info("Shutting down workers...")
             for worker in workers:
                 worker.stop()
-    
+
     asyncio.run(main())

@@ -1,9 +1,11 @@
 """
-Reverse image search and EXIF data scraper
+Reverse image search and EXIF data scraper with SSRF protection
 """
 import requests
 import json
 from PIL import Image
+import ipaddress
+from urllib.parse import urlparse
 from PIL.ExifTags import TAGS, GPSTAGS
 import io
 import re

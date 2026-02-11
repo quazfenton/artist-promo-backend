@@ -39,25 +39,28 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         "created_at": datetime.utcnow().isoformat() + "Z",
         "user_id": user_id
     }
-    
+
     # Check for duplicate job if dedupe_key is provided
     if dedupe_key:
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
-        if seen_before(fp):
-            # Return the same job_id to avoid duplicates
-            return job["job_id"]  # Return existing job_id to avoid creating duplicate
-    
+        existing_job_id = get_job_id_by_fingerprint(fp)
+        if existing_job_id:
+            return existing_job_id
+        # No mapping found; log warning and continue to enqueue a new job
+        logging.getLogger(__name__).warning(
+            "Fingerprint %s seen before but no job_id mapping found", fp
+        )
+
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
     queue_name = f"queue:{queue_category}"
-    
+
     # Add priority to the job for prioritized processing
     job['priority'] = priority
-    
+
     # Push job to Redis list
     r.lpush(queue_name, json.dumps(job))
-    
     # Track the job in our job tracker
     r.hset("jobs", job["job_id"], json.dumps({
         "status": "queued",
