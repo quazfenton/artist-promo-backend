@@ -53,7 +53,7 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
             if existing_job_id:
                 return existing_job_id
             # No mapping found; log warning and continue to enqueue a new job
-import logging
+            logging.getLogger(__name__).warning(
                 "Fingerprint seen but no job_id mapping found; fingerprint=%s, job_type=%s; re-enqueueing",
                 fp, job_type,
             )
