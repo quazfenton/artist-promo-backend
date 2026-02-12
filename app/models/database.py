@@ -246,7 +246,7 @@ class OutreachLog(Base):
     
     # Metadata
     n8n_execution_id = Column(String(255), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
     
     # Relationships
     contact = relationship("Contact", back_populates="outreach_history")
@@ -273,7 +273,7 @@ class ScraperRun(Base):
     
     # Logs
     error_log = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
 
 
 # ==================== VIEWS / MATERIALIZED QUERIES ====================

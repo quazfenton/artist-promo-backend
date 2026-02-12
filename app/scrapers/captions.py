@@ -25,7 +25,7 @@ def extract_captions_emails(youtube_video_id):
         
         for url in caption_urls:
             try:
-                response = requests.get(url)
+                response = requests.get(url, timeout=30)
                 if response.status_code == 200:
                     # Parse the XML captions
                     root = ET.fromstring(response.text)

@@ -8,7 +8,6 @@ import logging
 from urllib.parse import urlparse
 import dns.resolver
 import redis
-import psycopg2
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -299,20 +298,20 @@ class ConfigValidator:
             # Separate critical and warning issues
             critical_issues = []
             warnings = []
-            
+
             for config_name, (is_valid, message) in validation_results.items():
                 if not is_valid and any(keyword in message.lower() for keyword in ["database", "redis", "connection", "invalid"]):
                     critical_issues.append(f"{config_name}: {message}")
                 elif not is_valid:
-                    critical_issues.append(f"{config_name}: {message}")
+                    warnings.append(f"{config_name}: {message}")
                 elif "missing" in message.lower() or "not set" in message.lower():
                     warnings.append(f"{config_name}: {message}")
             
-            status = "critical" if critical_issues else "warnings"
+            return_status = "critical" if critical_issues else ("warnings" if warnings else "healthy")
             message = f"Configuration has {len(critical_issues)} critical issues and {len(warnings)} warnings"
             
-            return False, {
-                "status": status,
+            return (len(critical_issues) == 0), {  # Return True only if no critical issues
+                "status": return_status,
                 "message": message,
                 "critical_issues": critical_issues,
                 "warnings": warnings,

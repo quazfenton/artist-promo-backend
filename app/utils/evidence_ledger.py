@@ -56,7 +56,8 @@ def store_evidence_in_db(evidence: Evidence):
                 "timestamp": evidence.timestamp,
                 "confidence": evidence.confidence,
                 "metadata": evidence.metadata
-            })
+            }
+            resolved_entity.source_urls.append(new_evidence)
             # Notify SQLAlchemy of the in-place mutation
             flag_modified(resolved_entity, 'source_urls')
             db.commit()

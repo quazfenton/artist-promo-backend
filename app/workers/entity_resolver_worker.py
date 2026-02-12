@@ -183,12 +183,16 @@ class EntityResolverEnrichmentWorker:
                 # Find staging contacts associated with this normalization job
                 # We'll look for staging contacts that came from the raw signals of this job
                 staging_contacts = db.query(StagingContact).filter(
-                    StagingContact.provenance["job_id"].astext == normalized_job_id
-                ).all()
-
-                staging_contacts = db.query(StagingContact).filter(
-                    StagingContact.provenance["job_id"].astext == normalized_job_id
-                ).all()
+                    db.query(StagingContact.provenance["job_id"].astext).filter(
+                        StagingContact.provenance["job_id"].astext == normalized_job_id
+                    ).all()
+                
+                if not staging_contacts:
+                    logger.info(f"No staging contacts found for job {normalized_job_id}")
+                    return {
+                        "status": "completed",
+                        "resolved_count": 0,
+                        "processed_staging": 0
                     }
                 
                 # Group staging contacts by merge key
@@ -325,19 +329,22 @@ if __name__ == "__main__":
     async def main():
         # Create and run worker(s)
         workers = []
-        for i in range(args.concurrency):
+        tasks = []
+        for _ in range(args.concurrency):
             worker = EntityResolverEnrichmentWorker()
             workers.append(worker)
-            # Run each worker in a separate task
-            asyncio.create_task(worker.run())
-        
+            # Run each worker in a separate task and store the reference
+            task = asyncio.create_task(worker.run())
+            tasks.append(task)
+
         try:
-            # Keep the main task running
-            while True:
-                await asyncio.sleep(1)
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks)
         except KeyboardInterrupt:
             logger.info("Shutting down workers...")
             for worker in workers:
                 worker.stop()
+            # Wait for tasks to complete gracefully
+            await asyncio.gather(*tasks, return_exceptions=True)
     
     asyncio.run(main())
