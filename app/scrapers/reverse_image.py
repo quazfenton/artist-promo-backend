@@ -272,32 +272,31 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
     """
     Extract contact information from reverse image search results
     """
+    import socket
+    import ipaddress
+    from urllib.parse import urlparse, urljoin
+    import requests
+
+    def validate_url_for_ssrf(url):
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ['http', 'https']:
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+
+        if not parsed_url.hostname:
+            raise ValueError(f"URL does not contain a valid hostname: {url}")
+
+        try:
+            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+            for res in addr_info:
+                ip = ipaddress.ip_address(res[4][0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+        except Exception as e:
+            raise ValueError(f"IP validation error for {parsed_url.hostname}: {str(e)}")
+
     try:
-        import base64
-        import socket
-        import ipaddress
-        from urllib.parse import urlparse
-        import requests
-
-        def validate_url_for_ssrf(url):
-            parsed_url = urlparse(url)
-            if parsed_url.scheme not in ['http', 'https']:
-                raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
-
-            if not parsed_url.hostname:
-                raise ValueError(f"URL does not contain a valid hostname: {url}")
-
-            try:
-                addr_info = socket.getaddrinfo(parsed_url.hostname, None)
-                for res in addr_info:
-                    ip = ipaddress.ip_address(res[4][0])
-                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
-                        raise ValueError(f"Private/reserved IP address blocked: {ip}")
-            except socket.gaierror:
-                raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
-            except Exception as e:
-                raise ValueError(f"IP validation error for {parsed_url.hostname}: {str(e)}")
-
         # Validate initial URL
         validate_url_for_ssrf(image_url)
 
@@ -309,57 +308,61 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
                 validate_url_for_ssrf(next_url)
             else:
                 # Handle relative redirects
-                from urllib.parse import urljoin
                 next_url = urljoin(image_url, next_url)
                 validate_url_for_ssrf(next_url)
 
             response = requests.get(next_url, allow_redirects=False, timeout=10)
 
-        # Ensure a hostname is present for network requests
-        if not parsed_url.hostname:
-            raise ValueError(f"URL does not contain a valid hostname: {image_url}")
-
-        try:
-            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
-            for res in addr_info:
-                ip = ipaddress.ip_address(res[4][0])
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
-                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
-        except socket.gaierror:
-            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
-        'locations': []
-    }
-    
-    # Perform reverse image search
-    search_results = []
-    
-    if google_api_key and search_engine_id:
-        search_results.extend(
-            reverse_image_search_google(image_url, google_api_key, search_engine_id)
-        )
-    
-    # Process search results for contact information
-    for result in search_results:
-        page_url = result.get('url')
-        if page_url:
-            # Extract contact info from each page that contains the image
-            page_contacts = extract_contact_info_from_page(page_url)
-            contact_info['emails'].extend(page_contacts.get('emails', []))
-            contact_info['websites'].append(page_url)
-            contact_info['social_profiles'].extend(page_contacts.get('social_profiles', []))
-            contact_info['possible_names'].extend(page_contacts.get('names', []))
-    
-    # Also check EXIF data from the original image
-    exif_emails = extract_exif_emails(image_url)
-    contact_info['emails'].extend(exif_emails)
-    
-    # Remove duplicates
-    contact_info['emails'] = list(set(contact_info['emails']))
-    contact_info['websites'] = list(set(contact_info['websites']))
-    contact_info['social_profiles'] = list(set(contact_info['social_profiles']))
-    contact_info['possible_names'] = list(set(contact_info['possible_names']))
-    
-    return contact_info
+        # Initialize contact info dictionary
+        contact_info = {
+            'emails': [],
+            'phone_numbers': [],
+            'websites': [],
+            'social_profiles': [],
+            'possible_names': [],
+            'locations': []
+        }
+        
+        # Perform reverse image search
+        search_results = []
+        
+        if google_api_key and search_engine_id:
+            search_results.extend(
+                reverse_image_search_google(image_url, google_api_key, search_engine_id)
+            )
+        
+        # Process search results for contact information
+        for result in search_results:
+            page_url = result.get('url')
+            if page_url:
+                # Extract contact info from each page that contains the image
+                page_contacts = extract_contact_info_from_page(page_url)
+                contact_info['emails'].extend(page_contacts.get('emails', []))
+                contact_info['websites'].append(page_url)
+                contact_info['social_profiles'].extend(page_contacts.get('social_profiles', []))
+                contact_info['possible_names'].extend(page_contacts.get('names', []))
+        
+        # Also check EXIF data from the original image
+        exif_emails = extract_exif_emails(image_url)
+        contact_info['emails'].extend(exif_emails)
+        
+        # Remove duplicates
+        contact_info['emails'] = list(set(contact_info['emails']))
+        contact_info['websites'] = list(set(contact_info['websites']))
+        contact_info['social_profiles'] = list(set(contact_info['social_profiles']))
+        contact_info['possible_names'] = list(set(contact_info['possible_names']))
+        
+        return contact_info
+    except Exception as e:
+        print(f"Error extracting contact from reverse search: {str(e)}")
+        return {
+            'emails': [],
+            'phone_numbers': [],
+            'websites': [],
+            'social_profiles': [],
+            'possible_names': [],
+            'locations': []
+        }
 
 def extract_contact_info_from_page(url):
     """

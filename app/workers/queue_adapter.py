@@ -9,6 +9,7 @@ import redis
 import os
 from typing import Dict, Any, Optional
 import hashlib
+import logging
 
 # Get Redis URL from environment, with fallback
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -48,14 +49,15 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         if existing_job_id:
             return existing_job_id
         # No mapping found; log warning and continue to enqueue a new job
-        logging.getLogger(__name__).warning(
-            "Fingerprint %s seen before but no job_id mapping found", fp
-        )
-
-            # No mapping found; continue to enqueue a new job
+        if seen_before(fp):
             logging.getLogger(__name__).warning(
                 f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
             )
+
+    # Use a queue name based on the job type category
+    queue_category = job_type.split(':')[0] if ':' in job_type else job_type
+    queue_name = f"queue:{queue_category}"
+
     # Add priority to the job for prioritized processing
     job['priority'] = priority
 

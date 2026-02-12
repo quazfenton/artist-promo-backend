@@ -283,17 +283,21 @@ if __name__ == "__main__":
 
         try:
             # Wait for all tasks to complete
-            await asyncio.gather(*tasks)
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
                     logger.error("Worker task failed", exc_info=result)
                     raise result
+        except KeyboardInterrupt:
+            logger.info("Received shutdown signal...")
+        except Exception as e:
             logger.error(f"Worker task failed: {e}")
             raise
         finally:
             logger.info("Shutting down workers...")
             for worker in workers:
                 worker.stop()
+            # Wait for tasks to complete gracefully
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     asyncio.run(main())

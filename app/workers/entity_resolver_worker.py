@@ -183,9 +183,8 @@ class EntityResolverEnrichmentWorker:
                 # Find staging contacts associated with this normalization job
                 # We'll look for staging contacts that came from the raw signals of this job
                 staging_contacts = db.query(StagingContact).filter(
-                    db.query(StagingContact.provenance["job_id"].astext).filter(
-                        StagingContact.provenance["job_id"].astext == normalized_job_id
-                    ).all()
+                    StagingContact.provenance["job_id"].astext == normalized_job_id
+                ).all()
                 
                 if not staging_contacts:
                     logger.info(f"No staging contacts found for job {normalized_job_id}")
