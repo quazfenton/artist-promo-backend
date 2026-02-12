@@ -282,15 +282,12 @@ class OutreachWorker:
         self.running = False
 
 # For running as standalone script
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Outreach Worker")
-    parser.add_argument("--concurrency", type=int, default=1, help="Number of concurrent workers")
-    args = parser.parse_args()
-    
-    async def main():
-        # Create and run worker(s)
-        workers = []
+            # Wait for all tasks to complete and surface any exceptions
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error("Worker task failed", exc_info=result)
+                    raise result
         for i in range(args.concurrency):
             worker = OutreachWorker()
             workers.append(worker)

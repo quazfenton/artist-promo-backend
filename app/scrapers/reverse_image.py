@@ -253,32 +253,86 @@ def batch_reverse_image_lookup(image_urls, google_api_key=None, search_engine_id
     results = []
     
     for image_url in image_urls:
-        try:
-            result = extract_contact_from_reverse_search(
-                image_url, 
-                google_api_key=google_api_key, 
-                search_engine_id=search_engine_id
-            )
-            result['image_url'] = image_url
-            results.append(result)
-        except Exception as e:
-            print(f"Error processing image {image_url}: {str(e)}")
-            results.append({
-                'image_url': image_url,
-                'error': str(e),
+        from urllib.parse import urlparse
+        import requests
+        import json
+        import base64
+
+        def extract_contact_from_reverse_search(image_url, google_api_key=None, search_engine_id=None):
+            """
+            Extract contact information from reverse image search results
+            """
+            # Initialize contact_info to avoid NameError and ensure a consistent return structure
+            contact_info = {
                 'emails': [],
                 'websites': [],
                 'social_profiles': [],
                 'possible_names': [],
-                'locations': []
-            })
-    
-    return results
+                'locations': [],  # Ensure 'locations' is correctly initialized
+            }
 
-def extract_geolocation_from_image(image_path_or_url):
-    """
-    Extract geographic location from image EXIF data
-    """
+            # Initialize parsed_url to avoid NameError if referenced later
+            parsed_url = urlparse(image_url)
+
+            try:
+                # Placeholder for actual reverse image search logic using Google Custom Search.
+                # The full implementation of the search and parsing is not provided in the context,
+                # but the structure for handling API keys and populating contact_info would go here.
+                if google_api_key and search_engine_id:
+                    # Example structure for Google Custom Search API call:
+                    # search_query = image_url
+                    # api_endpoint = "https://www.googleapis.com/customsearch/v1"
+                    # params = {
+                    #     "q": search_query,
+                    #     "cx": search_engine_id,
+                    #     "key": google_api_key,
+                    #     "searchType": "image"
+                    # }
+                    # response = requests.get(api_endpoint, params=params, timeout=10)
+                    # response.raise_for_status()
+                    # search_results = response.json()
+                    #
+                    # # Parse search_results to populate contact_info
+                    # # For demonstration, this remains a placeholder for actual extraction logic
+                    pass
+                else:
+                    contact_info['error'] = "Google API key or Search Engine ID missing for reverse image search."
+
+            except requests.exceptions.RequestException as e:
+                contact_info['error'] = f"API request failed: {str(e)}"
+            except json.JSONDecodeError as e:
+                contact_info['error'] = f"Failed to parse API response: {str(e)}"
+            except Exception as e:
+                contact_info['error'] = f"An unexpected error occurred during reverse image search: {str(e)}"
+    
+            return contact_info
+
+                try:
+                    result = extract_contact_from_reverse_search(
+                        image_url,
+                        google_api_key=google_api_key,
+                        search_engine_id=search_engine_id
+                    )
+                    result['image_url'] = image_url
+                    results.append(result)
+                except Exception as e:
+                    print(f"Error processing image {image_url}: {str(e)}")
+                    results.append({
+                        'image_url': image_url,
+                        'error': str(e),
+                        'emails': [],
+                        'websites': [],
+                        'social_profiles': [],
+                        'possible_names': [],
+                        'locations': []
+                    })
+    
+            return results
+
+        def extract_geolocation_from_image(image_path_or_url):
+            """
+            Extract geographic location from image EXIF data
+            """
     try:
         exif_data = extract_exif_data(image_path_or_url)
         
