@@ -117,9 +117,9 @@ def dequeue_job(queue_name: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
     return json.loads(payload)
 
 def complete_job(job_id: str, result: Dict[str, Any]):
-    """
-    Mark a job as completed
-    """
+    stale = r.zrangebyscore("job_fingerprints", "-inf", cutoff)
+    for fp in stale:
+        r.delete(f"fingerprint_to_job_id:{fp.decode('utf-8')}")
     r.hset("jobs", job_id, json.dumps({
         "status": "completed",
         "result": result,
