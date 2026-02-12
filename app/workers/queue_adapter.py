@@ -9,6 +9,7 @@ import redis
 import os
 from typing import Dict, Any, Optional
 import hashlib
+import logging
 
 # Get Redis URL from environment, with fallback
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
