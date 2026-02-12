@@ -301,17 +301,19 @@ def extract_contact_from_reverse_search(image_url, google_api_key=None, search_e
         validate_url_for_ssrf(image_url)
 
         # Download image with redirect validation
-        response = requests.get(image_url, allow_redirects=False, timeout=10)
+        current_url = image_url
+        response = requests.get(current_url, allow_redirects=False, timeout=10)
         while response.is_redirect:
             next_url = response.headers['Location']
             if next_url.startswith(('http://', 'https://')):
                 validate_url_for_ssrf(next_url)
             else:
                 # Handle relative redirects
-                next_url = urljoin(image_url, next_url)
+                next_url = urljoin(current_url, next_url)
                 validate_url_for_ssrf(next_url)
 
-            response = requests.get(next_url, allow_redirects=False, timeout=10)
+            current_url = next_url
+            response = requests.get(current_url, allow_redirects=False, timeout=10)
 
         # Initialize contact info dictionary
         contact_info = {
