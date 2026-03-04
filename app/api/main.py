@@ -386,8 +386,6 @@ async def scrape_spotify(
     except Exception as e:
         logger.error(f"Spotify scrape queue error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to queue scraping job: {str(e)}")
-
-
 @app.post("/scrape/youtube")
 async def scrape_youtube(
     request: ScraperRequest,
@@ -407,6 +405,50 @@ async def scrape_youtube(
             params={
                 "query": request.query or "hip hop playlist",
                 "max_results": request.max_results
+            },
+            source="api",
+            priority=5,
+            user_id=current_user.get("user_id")
+        )
+
+        return {
+            "status": "queued",
+            "scraper": "youtube",
+            "job_id": job_id,
+        }
+
+@app.delete("/jobs/{job_id}")
+async def cancel_job(
+    job_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Cancel a queued job (only works if job hasn't started)
+
+    Note: This marks the job as cancelled in the job tracker.
+    Workers will skip processing cancelled jobs.
+    """
+    from app.workers.queue_adapter import r
+    import json
+
+    status_data = r.hget("jobs", job_id)
+    if not status_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    status = json.loads(status_data)
+    if status.get("status") not in ["queued", "pending"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel job with status: {status.get('status')}. Only queued/pending jobs can be cancelled."
+        )
+
+    # Update job status to cancelled instead of deleting
+    status["status"] = "cancelled"
+    r.hset("jobs", job_id, json.dumps(status))
+
+    logger.info(f"Marked job {job_id} as cancelled")
+
+    return {"status": "success", "message": f"Job {job_id} cancelled", "job_id": job_id}
             },
             source="api",
             priority=5,
@@ -442,11 +484,12 @@ async def scrape_instagram(
 
         # Extract username from URL if provided
         username = None
+        # Extract username from URL if provided
+        username = None
         if request.url:
             username = request.url.split('/')[-2] if '/' in request.url else request.url
 
         job_id = enqueue_job(
-            job_type="scrape:instagram_profile",
             params={
                 "username": username,
                 "hashtag": request.query  # Using query field for hashtag
