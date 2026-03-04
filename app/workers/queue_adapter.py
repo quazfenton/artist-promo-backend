@@ -9,6 +9,7 @@ import redis
 import os
 from typing import Dict, Any, Optional
 import hashlib
+import logging
 
 # Get Redis URL from environment, with fallback
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -39,34 +40,29 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         "created_at": datetime.utcnow().isoformat() + "Z",
         "user_id": user_id
     }
-    
+
     # Check for duplicate job if dedupe_key is provided
     if dedupe_key:
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
+        existing_job_id = get_job_id_by_fingerprint(fp)
+        if existing_job_id:
+            return existing_job_id
+        # No mapping found; log warning and continue to enqueue a new job
         if seen_before(fp):
-            # Need to return the existing job_id that corresponds to this fingerprint
-            # Since we can't directly map fingerprints to job_ids with the current implementation,
-            # we need to store this mapping. For now, we'll return a special value to indicate duplicate
-            # But ideally we should enhance the system to track which job_id corresponds to each fingerprint
-            existing_job_id = get_job_id_by_fingerprint(fp)
-            if existing_job_id:
-                return existing_job_id
-            # No mapping found; continue to enqueue a new job
-                logging.getLogger(__name__).warning(
-                    f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
-                )
-    
+            logging.getLogger(__name__).warning(
+                f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}, params={params}; re-enqueueing"
+            )
+
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
     queue_name = f"queue:{queue_category}"
-    
+
     # Add priority to the job for prioritized processing
     job['priority'] = priority
-    
+
     # Push job to Redis list
     r.lpush(queue_name, json.dumps(job))
-    
     # Track the job in our job tracker
     r.hset("jobs", job["job_id"], json.dumps({
         "status": "queued",
