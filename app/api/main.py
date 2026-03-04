@@ -346,7 +346,6 @@ class ExportRequest(BaseModel):
     min_score: float = 0.0
     limit: int = 1000
 
-
 # ==================== SCRAPER ENDPOINTS ====================
 
 @app.post("/scrape/spotify")
@@ -362,7 +361,13 @@ async def scrape_spotify(
     try:
         # Enqueue the scraping job
         from app.workers.queue_adapter import enqueue_job
+        import json
 
+        job_id = enqueue_job(
+            job_type="scrape:spotify_playlist",
+            params={
+                "genre": request.genre,
+                "min_followers": request.min_followers,
         job_id = enqueue_job(
             job_type="scrape:spotify_playlist",
             params={
@@ -626,7 +631,7 @@ async def score_contacts(db: Session = Depends(get_db)):
     
     contacts = db.query(Contact).all()
     updated_count = 0
-    
+
     for contact in contacts:
         score = scorer.calculate_priority_score(
             follower_count=contact.follower_count,
@@ -635,16 +640,20 @@ async def score_contacts(db: Session = Depends(get_db)):
             llm_quality_score=contact.llm_quality_score,
             contact_type=contact.contact_type.value if contact.contact_type else "playlist_curator"
         )
-        
+
         contact.priority_score = score
         updated_count += 1
-    
+
     db.commit()
-    
+
     return {
         "status": "success",
         "updated_count": updated_count
     }
+
+# ==================== EXPORT ENDPOINTS ====================
+
+@app.post("/export/csv")
 
 
 # ==================== EXPORT ENDPOINTS ====================
