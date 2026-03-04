@@ -150,6 +150,158 @@ async def get_metrics():
     """Prometheus metrics endpoint"""
     return await metrics_endpoint()
 
+
+# ==================== JOB MANAGEMENT ENDPOINTS ====================
+
+@app.get("/jobs/{job_id}/status")
+async def get_job_status_endpoint(
+    job_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get status of a queued/completed job
+    
+    Returns the current status of a job including:
+    - status: queued, running, completed, failed
+    - type: job type (e.g., scrape:spotify_playlist)
+    - queue: which queue the job is in
+    - created: when the job was created
+    - completed: when the job completed (if applicable)
+    - result: job result (if completed)
+    - error: error message (if failed)
+    """
+    from app.workers.queue_adapter import get_job_status
+    
+    status = get_job_status(job_id)
+    
+    if status.get("status") == "unknown":
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    
+    return {
+        "job_id": job_id,
+        "status": status.get("status"),
+        "type": status.get("type"),
+        "queue": status.get("queue"),
+        "created": status.get("created"),
+        "completed": status.get("completed"),
+        "result": status.get("result"),
+        "error": status.get("error")
+    }
+
+
+@app.get("/jobs")
+async def list_jobs(
+    status: Optional[str] = Query(None, description="Filter by status (queued, running, completed, failed)"),
+    job_type: Optional[str] = Query(None, description="Filter by job type"),
+    limit: int = Query(default=50, le=100, description="Maximum number of jobs to return"),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    List jobs with optional filtering
+    
+    Returns a paginated list of jobs with their current status.
+    Jobs are sorted by creation date (newest first).
+    """
+    from app.workers.queue_adapter import r
+    import json
+    
+    # Get all jobs from hash
+    jobs_data = r.hgetall("jobs")
+    
+    jobs = []
+    for job_id, job_json in jobs_data.items():
+        job = json.loads(job_json)
+        
+        # Apply filters
+        if status and job.get("status") != status:
+            continue
+        if job_type and job.get("type") != job_type:
+            continue
+        
+        jobs.append({
+            "job_id": job_id,
+            **job
+        })
+    
+    # Sort by created date (newest first)
+    jobs.sort(key=lambda x: x.get("created", ""), reverse=True)
+    
+    return {
+        "jobs": jobs[:limit],
+        "total": len(jobs),
+        "filtered": len(jobs),
+        "limit": limit
+    }
+
+
+@app.delete("/jobs/{job_id}")
+async def cancel_job(
+    job_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Cancel a queued job (only works if job hasn't started)
+    
+    Note: This only removes the job from the job tracker.
+    The job may still be in the queue and will be skipped by workers.
+    """
+    from app.workers.queue_adapter import r
+    import json
+    
+    status_data = r.hget("jobs", job_id)
+    if not status_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    status = json.loads(status_data)
+    if status.get("status") not in ["queued", "pending"]:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot cancel job with status: {status.get('status')}. Only queued/pending jobs can be cancelled."
+        )
+    
+    # Remove from jobs hash
+    r.hdel("jobs", job_id)
+    
+    logger.info(f"Cancelled job {job_id}")
+    
+    return {"status": "success", "message": f"Job {job_id} cancelled", "job_id": job_id}
+
+
+@app.get("/jobs/queue/stats")
+async def get_queue_stats(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get queue statistics
+    
+    Returns the current length of all queues and overall job statistics.
+    """
+    from app.workers.queue_adapter import get_active_queues, r
+    
+    queues = get_active_queues()
+    
+    # Get job statistics
+    all_jobs = r.hgetall("jobs")
+    job_stats = {
+        "total": len(all_jobs),
+        "queued": 0,
+        "running": 0,
+        "completed": 0,
+        "failed": 0
+    }
+    
+    for job_json in all_jobs.values():
+        job = json.loads(job_json)
+        status = job.get("status", "unknown")
+        if status in job_stats:
+            job_stats[status] += 1
+    
+    return {
+        "queues": queues,
+        "job_stats": job_stats,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./artist_promo.db")
 engine = create_engine(DATABASE_URL)
