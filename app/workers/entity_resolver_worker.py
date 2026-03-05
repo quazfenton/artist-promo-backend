@@ -186,9 +186,8 @@ class EntityResolverEnrichmentWorker:
                 # Using a more efficient database-level filter
                 from sqlalchemy import text
                 staging_contacts = db.query(StagingContact).filter(
-                    db.query(StagingContact.provenance["job_id"].astext).filter(
-                        StagingContact.provenance["job_id"].astext == normalized_job_id
-                    ).all()
+                    StagingContact.provenance["job_id"].astext == normalized_job_id
+                ).all()
                 
                 if not staging_contacts:
                     logger.info(f"No staging contacts found for job {normalized_job_id}")

@@ -820,23 +820,16 @@ def save_spotify_results(results: List[Dict], db: Session):
 
                     db.add(contact)
 
-            db.flush()  # Get IDs without committing the full transaction
+            db.commit()  # Commit this item independently
             successful_saves += 1
             logger.info(f"Saved playlist: {result.get('name')}")
 
         except Exception as e:
             logger.error(f"Error saving Spotify result: {str(e)}")
             failed_saves += 1
-            # Don't rollback the entire transaction, just skip this item
-            db.rollback()  # Rollback just this item's changes
+            db.rollback()  # Rollback just this item's transaction
 
-    # Commit all changes at the end
-    try:
-        db.commit()
-        logger.info(f"Successfully saved {successful_saves} playlists, {failed_saves} failed")
-    except Exception as e:
-        logger.error(f"Error committing transaction: {str(e)}")
-        db.rollback()
+    logger.info(f"Finished Spotify save: {successful_saves} saved, {failed_saves} failed")
 
 
 def save_youtube_results(results: List[Dict], db: Session):
@@ -875,22 +868,16 @@ def save_youtube_results(results: List[Dict], db: Session):
             )
 
             db.add(contact)
-            db.flush()  # Get ID without committing full transaction
+            db.commit()  # Commit this item independently
             successful_saves += 1
             logger.info(f"Saved YouTube contact: {result.get('channel_name')}")
 
         except Exception as e:
             logger.error(f"Error saving YouTube result: {str(e)}")
             failed_saves += 1
-            db.rollback()  # Rollback just this item's changes
+            db.rollback()  # Rollback just this item's transaction
 
-    # Commit all changes at the end
-    try:
-        db.commit()
-        logger.info(f"Successfully saved {successful_saves} YouTube contacts, {failed_saves} failed")
-    except Exception as e:
-        logger.error(f"Error committing transaction: {str(e)}")
-        db.rollback()
+    logger.info(f"Finished YouTube save: {successful_saves} saved, {failed_saves} failed")
 
 
 def save_instagram_results(results: List[Dict], db: Session):
@@ -930,22 +917,16 @@ def save_instagram_results(results: List[Dict], db: Session):
             )
 
             db.add(contact)
-            db.flush()  # Get ID without committing full transaction
+            db.commit()  # Commit this item independently
             successful_saves += 1
             logger.info(f"Saved Instagram contact: @{result.get('username')}")
 
         except Exception as e:
             logger.error(f"Error saving Instagram result: {str(e)}")
             failed_saves += 1
-            db.rollback()  # Rollback just this item's changes
+            db.rollback()  # Rollback just this item's transaction
 
-    # Commit all changes at the end
-    try:
-        db.commit()
-        logger.info(f"Successfully saved {successful_saves} Instagram contacts, {failed_saves} failed")
-    except Exception as e:
-        logger.error(f"Error committing transaction: {str(e)}")
-        db.rollback()
+    logger.info(f"Finished Instagram save: {successful_saves} saved, {failed_saves} failed")
 
 
 def save_web_result(result: Dict, db: Session):
@@ -966,14 +947,14 @@ def save_web_result(result: Dict, db: Session):
                         contact_type=ContactType.PUBLICIST,  # Default, can be refined
                     )
                     db.add(contact)
+                    db.commit()
                     successful_saves += 1
             except Exception as email_error:
                 logger.error(f"Error saving email {email}: {str(email_error)}")
                 failed_saves += 1
+                db.rollback()
                 # Continue with other emails even if one fails
 
-        db.flush()  # Flush all additions
-        db.commit()
         logger.info(f"Successfully saved {successful_saves} web contacts, {failed_saves} failed")
     except Exception as e:
         logger.error(f"Error saving web result: {str(e)}")

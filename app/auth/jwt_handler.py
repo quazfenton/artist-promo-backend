@@ -5,6 +5,7 @@ from typing import Optional
 import os
 import redis
 import uuid
+from loguru import logger
 
 class JWTHandler:
     def __init__(self):
@@ -122,7 +123,10 @@ class JWTHandler:
             return False
 
     def verify_api_key(self, api_key: str) -> bool:
-        valid_keys = os.getenv("API_KEYS", "").split(",")
+        keys_env = os.getenv("API_KEYS", "")
+        if not keys_env:
+            return False
+        valid_keys = [k.strip() for k in keys_env.split(",") if k.strip()]
         return api_key in valid_keys
 
     def has_role(self, token_payload: dict, required_role: str) -> bool:
