@@ -84,7 +84,7 @@ class ResolvedEntity(Base):
     bio = Column(String)  # merged bio
     source_urls = Column(JSON)  # merged source URLs
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
+
     # State tracking fields (ADDED for pipeline state machine)
     pipeline_state = Column(String, default=PipelineState.SCRAPED.value, index=True)
     state_history = Column(JSON, default=list)  # Track state transitions
@@ -94,9 +94,9 @@ class ResolvedEntity(Base):
 
     # Relationship to canonical contact
     canonical_contact = relationship("Contact", back_populates="resolved_entities")
-    
-    # Relationship to evidence (will be created when Evidence table exists)
-    # evidence_items = relationship("Evidence", back_populates="entity", cascade="all, delete-orphan")
+
+    # Relationship to evidence
+    evidence_items = relationship("Evidence", back_populates="entity", cascade="all, delete-orphan")
 
     # Indexes
     __table_args__ = (
