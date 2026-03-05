@@ -178,21 +178,24 @@ def test_scraper_safe_scrape_handles_cancellation():
     """Test that scraper safe_scrape handles cancellation properly"""
     from app.scrapers.base_scraper import BaseScraper
     import asyncio
-    
+
     scraper = BaseScraper("test_scraper")
-    
+
     # Test that CancelledError is re-raised (not caught)
     async def mock_scrape_with_cancellation():
         raise asyncio.CancelledError("Task cancelled")
-    
+
     # Temporarily replace the scrape method
     original_scrape = scraper.scrape
     scraper.scrape = mock_scrape_with_cancellation
-    
-    try:
+
+    async def run_test():
         # This should raise CancelledError, not catch and return empty list
         with pytest.raises(asyncio.CancelledError):
             await scraper.safe_scrape()
+
+    try:
+        asyncio.run(run_test())
     finally:
         # Restore original method
         scraper.scrape = original_scrape
