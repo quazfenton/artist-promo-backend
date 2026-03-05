@@ -142,40 +142,53 @@ class SignalNormalizer:
         """Convert raw signal to normalized staging contacts"""
         payload = raw_signal.payload or {}
         staging_contacts = []
-        
-        # Extract emails from various sources
-        emails = self._extract_emails_from_payload(payload)
-        
-        # Extract other contact info
-        name = payload.get('name') or payload.get('display_name') or payload.get('full_name')
-        bio = payload.get('bio') or payload.get('description')
-        follower_count = payload.get('follower_count', 0)
-        platform_ids = payload.get('platform_ids', {})
-        
-        # Create staging contacts for each email found
-        for email in emails:
-            staging_contact = StagingContact(
-                raw_signal_id=raw_signal.id,
-                name=name,
-                email=email,
-                contact_type=self._infer_contact_type(raw_signal.source_platform, bio),
-                social_handles=self._extract_social_handles(payload),
-                confidence_score=self._calculate_initial_confidence(email, follower_count),
-                platform_ids=platform_ids,
-                follower_count=follower_count,
-                bio=bio,
-                source_url=payload.get('source_url') or raw_signal.dedupe_key,
-                provenance={
-                    'job_id': raw_signal.job_id,
-                    'source_platform': raw_signal.source_platform,
-                    'raw_signal_id': raw_signal.id,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            )
-            staging_contacts.append(staging_contact)
-        
+
+        for record in self._extract_signal_records(payload):
+            emails = self._extract_emails_from_payload(record)
+            if not emails:
+                continue
+
+            name = record.get('name') or record.get('display_name') or record.get('full_name')
+            bio = record.get('bio') or record.get('description')
+            follower_count = record.get('follower_count', 0)
+            platform_ids = record.get('platform_ids', {})
+            social_handles = self._extract_social_handles(record)
+            source_url = record.get('source_url') or record.get('url') or raw_signal.dedupe_key
+
+            for email in emails:
+                staging_contact = StagingContact(
+                    raw_signal_id=raw_signal.id,
+                    name=name,
+                    email=email,
+                    contact_type=self._infer_contact_type(raw_signal.source_platform, bio),
+                    social_handles=social_handles,
+                    confidence_score=self._calculate_initial_confidence(email, follower_count),
+                    platform_ids=platform_ids,
+                    follower_count=follower_count,
+                    bio=bio,
+                    source_url=source_url,
+                    provenance={
+                        'job_id': raw_signal.job_id,
+                        'source_platform': raw_signal.source_platform,
+                        'raw_signal_id': raw_signal.id,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                )
+                staging_contacts.append(staging_contact)
+
         return staging_contacts
-    
+
+    def _extract_signal_records(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract normalized records from raw payload structures."""
+        if not isinstance(payload, dict):
+            return []
+
+        results = payload.get('results')
+        if isinstance(results, list) and results:
+            return [item for item in results if isinstance(item, dict)]
+
+        return [payload]
+
     def _extract_emails_from_payload(self, payload: Dict[str, Any]) -> List[str]:
         """Extract emails from payload data"""
         import re

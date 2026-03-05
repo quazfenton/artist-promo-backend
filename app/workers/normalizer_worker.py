@@ -102,8 +102,9 @@ async def normalize_signals(job: Dict[str, Any]) -> Dict[str, Any]:
         staging_ids = []
         for staging_contact in staging_contacts:
             db.add(staging_contact)
+            db.flush()
             staging_ids.append(staging_contact.id)
-        
+
         db.commit()
         
         log.info(
@@ -207,16 +208,18 @@ async def worker_loop():
                 fail_job(job["job_id"], str(e))
                 
                 # Push to dead letter queue after 3 failures
-                failure_count = job.get("_failure_count", 0) + 1
+                failure_count = job.get("params", {}).get("_failure_count", 0) + 1
                 if failure_count >= 3:
                     push_to_dead_letter(job, str(e))
                     log.error(f"Job {job['job_id']} moved to dead letter queue after {failure_count} failures")
                 else:
                     # Re-enqueue with failure count for retry
                     log.warning(f"Re-enqueueing job {job['job_id']} for retry (attempt {failure_count})")
+                    retry_params = dict(job.get("params", {}))
+                    retry_params["_failure_count"] = failure_count
                     enqueue_job(
                         job_type=job["type"],
-                        params=job.get("params", {}),
+                        params=retry_params,
                         source=job.get("source", "worker"),
                         priority=job.get("priority", 5),
                         dedupe_key=job.get("dedupe_key")
