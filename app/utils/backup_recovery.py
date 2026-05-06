@@ -266,8 +266,8 @@ class FileBackupManager:
                     extracted_path = os.path.join(restore_path, member)
                     # Normalize the path to resolve any '..' components
                     extracted_path = os.path.normpath(extracted_path)
-                    # Ensure the path is within the intended directory
-                    if not extracted_path.startswith(str(restore_path)):
+                    # Use os.path.commonpath to securely check if path is within intended directory
+                    if os.path.commonpath([extracted_path, restore_path]) != str(restore_path):
                         raise ValueError(f"Unsafe path detected in archive: {member}")
 
                 # Extract only after validation

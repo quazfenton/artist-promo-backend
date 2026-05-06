@@ -20,6 +20,10 @@ def validate_url_for_ssrf(venue_url):
     # Block private IP ranges
     hostname = parsed_url.hostname
     if hostname:
+        # Check against common private hostnames first (always run this)
+        if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal', '.svc')):
+            raise ValueError(f"Blocked private hostname: {hostname}")
+
         try:
             # Check if hostname resolves to a private IP
             ip_addresses = socket.getaddrinfo(hostname, None)
@@ -33,10 +37,6 @@ def validate_url_for_ssrf(venue_url):
         except ValueError as e:
             # Re-raise the blockage error
             raise
-        else:
-            # Check against common private hostnames if not an IP
-            if hostname in ['localhost', 'local', 'internal'] or hostname.endswith(('.local', '.internal', '.svc')):
-                raise ValueError(f"Blocked private hostname: {hostname}")
 
 def extract_venue_emails(venue_url):
     """

@@ -14,38 +14,67 @@ def extract_exif_data(image_path_or_url):
     """
     Extract EXIF data from an image, including GPS coordinates and contact info
     """
+    import socket
+    import ipaddress
+    from urllib.parse import urlparse
+    
     try:
         # Handle both local paths and URLs
         if image_path_or_url.startswith(('http://', 'https://')):
-            response = requests.get(image_path_or_url)
+            # Validate URL to prevent SSRF
+            parsed_url = urlparse(image_path_or_url)
+            
+            # Check scheme
+            if parsed_url.scheme not in ['http', 'https']:
+                raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+            
+            # Resolve hostname to IP and check if it's safe
+            try:
+                addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+                for res in addr_info:
+                    ip = ipaddress.ip_address(res[4][0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                        raise ValueError(f"Private/reserved IP address blocked: {ip}")
+            except socket.gaierror:
+                raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+            
+            response = requests.get(image_path_or_url, timeout=30)
             response.raise_for_status()
             image_data = io.BytesIO(response.content)
+            file_handle = None
         else:
-            image_data = image_path_or_url  # Local file path
-        
-        # Open image and extract EXIF
-        image = Image.open(image_data)
-        exif_data = image._getexif()
-        
-        if not exif_data:
-            return {}
-        
-        # Parse EXIF data
-        parsed_exif = {}
-        for tag_id, value in exif_data.items():
-            tag = TAGS.get(tag_id, tag_id)
-            parsed_exif[tag] = value
-        
-        # Extract GPS info if available
-        gps_info = {}
-        if 'GPSInfo' in parsed_exif:
-            for key in parsed_exif['GPSInfo'].keys():
-                name = GPSTAGS.get(key, key)
-                gps_info[name] = parsed_exif['GPSInfo'][key]
-            parsed_exif['GPS'] = gps_info
-        
-        return parsed_exif
-        
+            # For local files, open with proper file handle
+            file_handle = open(image_path_or_url, 'rb')
+            image_data = file_handle
+
+        try:
+            # Open image and extract EXIF
+            image = Image.open(image_data)
+            exif_data = image._getexif()
+
+            if not exif_data:
+                return {}
+
+            # Parse EXIF data
+            parsed_exif = {}
+            for tag_id, value in exif_data.items():
+                tag = TAGS.get(tag_id, tag_id)
+                parsed_exif[tag] = value
+
+            # Extract GPS info if available
+            gps_info = {}
+            if 'GPSInfo' in parsed_exif:
+                for key in parsed_exif['GPSInfo'].keys():
+                    name = GPSTAGS.get(key, key)
+                    gps_info[name] = parsed_exif['GPSInfo'][key]
+                parsed_exif['GPS'] = gps_info
+
+            return parsed_exif
+        finally:
+            # Close file handle if opened
+            if file_handle:
+                file_handle.close()
+
     except Exception as e:
         print(f"Error extracting EXIF data from {image_path_or_url}: {str(e)}")
         return {}
@@ -72,13 +101,129 @@ def extract_exif_emails(image_path_or_url):
     
     return list(set(emails))  # Remove duplicates
 
+def reverse_image_search_google_vision(image_url, api_key):
+    """
+    Perform reverse image search using Google Vision API Web Detection
+    """
+    try:
+        import base64
+        import socket
+        import ipaddress
+        from urllib.parse import urlparse
+        
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(image_url)
+        if parsed_url.scheme not in ['http', 'https']:
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+        
+        # Ensure a hostname is present for network requests
+        if not parsed_url.hostname:
+            raise ValueError(f"URL does not contain a valid hostname: {image_url}")
+
+        try:
+            # Resolve hostname to IP addresses. The 'None' for service (port) is intentional,
+            # as we only care about the IP address for SSRF protection, not port-level resolution here.
+            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+            for res in addr_info:
+                ip = ipaddress.ip_address(res[4][0]) # res[4][0] is the IP address string
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+        except Exception as e: # Catch any other unexpected errors during IP validation
+            raise ValueError(f"IP validation error for {parsed_url.hostname}: {str(e)}")
+        
+        # Download image content
+        response = requests.get(image_url, timeout=30)
+        response.raise_for_status()
+        
+        # Encode image content to base64
+        encoded_image = base64.b64encode(response.content).decode('utf-8')
+        
+        # Prepare Vision API request
+        vision_url = "https://vision.googleapis.com/v1/images:annotate"
+        headers = {
+            'Content-Type': 'application/json',
+        }
+        
+        body = {
+            'requests': [{
+                'image': {
+                    'content': encoded_image
+                },
+                'features': [
+                    {
+                        'type': 'WEB_DETECTION',
+                        'maxResults': 10
+                    }
+                ]
+            }]
+        }
+        
+        params = {
+            'key': api_key
+        }
+        
+        response = requests.post(vision_url, headers=headers, json=body, params=params, timeout=30)
+        response.raise_for_status()
+        
+        results = response.json()
+        
+        pages_with_image = []
+        if 'responses' in results and len(results['responses']) > 0:
+            web_detection = results['responses'][0].get('webDetection', {})
+            
+            # Get pages with matching images
+            if 'pagesWithMatchingImages' in web_detection:
+                for page in web_detection['pagesWithMatchingImages']:
+                    pages_with_image.append({
+                        'url': page.get('url'),
+                        'title': page.get('pageTitle'),
+                        'snippet': page.get('description'),
+                        'score': page.get('score')
+                    })
+                    
+            # Get partial matching images
+            if 'partialMatchingImages' in web_detection:
+                for img in web_detection['partialMatchingImages']:
+                    pages_with_image.append({
+                        'url': img.get('url'),
+                        'title': img.get('pageTitle'),
+                        'snippet': img.get('description'),
+                        'score': img.get('score')
+                    })
+                    
+            # Get full matching images
+            if 'fullMatchingImages' in web_detection:
+                for img in web_detection['fullMatchingImages']:
+                    pages_with_image.append({
+                        'url': img.get('url'),
+                        'title': img.get('pageTitle'),
+                        'snippet': img.get('description'),
+                        'score': img.get('score')
+                    })
+
+        return pages_with_image
+
+    except Exception as e:
+        print(f"Error in Google Vision reverse image search: {str(e)}")
+        return []
+
+
 def reverse_image_search_google(image_url, api_key, search_engine_id):
     """
     Perform reverse image search using Google Custom Search API
+    Note: This is a fallback method since Google Custom Search doesn't truly support reverse image search by URL
     """
     try:
-        search_url = "https://www.googleapis.com/customsearch/v1"
+        # Since Google Custom Search API doesn't support true reverse image search by URL,
+        # we'll use Google Vision API instead if api_key is provided
+        if api_key:
+            return reverse_image_search_google_vision(image_url, api_key)
         
+        # Fallback: Use Google Custom Search API with image URL as query
+        search_url = "https://www.googleapis.com/customsearch/v1"
+
         params = {
             'key': api_key,
             'cx': search_engine_id,
@@ -86,15 +231,15 @@ def reverse_image_search_google(image_url, api_key, search_engine_id):
             'imgSize': 'large',
             'num': 10
         }
-        
-        # For image URL search
+
+        # For image URL search - this is not true reverse image search but the best we can do with this API
         params['q'] = f"image:{image_url}"
-        
-        response = requests.get(search_url, params=params)
+
+        response = requests.get(search_url, params=params, timeout=30)
         response.raise_for_status()
-        
+
         results = response.json()
-        
+
         pages_with_image = []
         if 'items' in results:
             for item in results['items']:
@@ -104,9 +249,9 @@ def reverse_image_search_google(image_url, api_key, search_engine_id):
                     'snippet': item.get('snippet'),
                     'image_url': item.get('image', {}).get('thumbnailLink')
                 })
-        
+
         return pages_with_image
-        
+
     except Exception as e:
         print(f"Error in Google reverse image search: {str(e)}")
         return []
@@ -168,11 +313,32 @@ def extract_contact_info_from_page(url):
     """
     Extract contact information from a webpage
     """
+    import socket
+    import ipaddress
+    from urllib.parse import urlparse
+    
     try:
+        # Validate URL to prevent SSRF
+        parsed_url = urlparse(url)
+        
+        # Check scheme
+        if parsed_url.scheme not in ['http', 'https']:
+            raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
+        
+        # Resolve hostname to IP and check if it's safe
+        try:
+            addr_info = socket.getaddrinfo(parsed_url.hostname, None)
+            for res in addr_info:
+                ip = ipaddress.ip_address(res[4][0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                    raise ValueError(f"Private/reserved IP address blocked: {ip}")
+        except socket.gaierror:
+            raise ValueError(f"Could not resolve hostname: {parsed_url.hostname}")
+        
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; ArtistPromoBot/1.0)'
         }
-        
+
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         
@@ -334,7 +500,7 @@ def convert_gps_to_decimal(gps_coords, gps_ref):
             def safe_rational_to_float(rational):
                 if isinstance(rational, tuple) and len(rational) >= 2 and rational[1] != 0:
                     return rational[0] / rational[1]
-                return None
+                return None  # Return None instead of 0 to indicate invalid GPS data
 
             if isinstance(degrees, tuple):
                 degrees = safe_rational_to_float(degrees)

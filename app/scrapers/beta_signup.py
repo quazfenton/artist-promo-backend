@@ -124,6 +124,7 @@ def extract_early_adopter_community_info(community_url):
         # Remove duplicates
         community_info['emails'] = list(set(community_info['emails']))
         community_info['contact_persons'] = list(set(community_info['contact_persons']))
+        community_info['members'] = list(set(community_info['members']))  # Also deduplicate members
         community_info['social_links'] = list(set(community_info['social_links']))
         community_info['platforms'] = list(set(community_info['platforms']))
         

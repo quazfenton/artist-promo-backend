@@ -363,8 +363,7 @@ class PipelineOrchestrator:
                     social_handles=entity_data.get("social_handles"),
                     follower_count=entity_data.get("follower_count", 0),
                     bio=entity_data.get("bio"),
-                    source_urls=entity_data.get("source_urls", []),
-                    provenance=entity_data.get("provenance", {})
+                    source_urls=entity_data.get("source_urls", [])
                 )
                 db.add(resolved_entity)
             db.commit()
@@ -711,7 +710,7 @@ class PipelineOrchestrator:
         email = entity.get("email")
         if email and "@" in email:
             domain = email.split("@")[1]
-            domain_analysis = await comprehensive_domain_analysis(domain)
+            domain_analysis = await asyncio.to_thread(comprehensive_domain_analysis, domain)
             
             # Add domain reputation info
             enriched["domain_reputation"] = domain_analysis.get("reputation_score", 50)

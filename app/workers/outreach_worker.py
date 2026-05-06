@@ -133,28 +133,11 @@ class OutreachWorker:
                 logger.info(f"Outreach sent successfully to {contact['email']}")
                 
                 # Update contact record to reflect outreach
-                db = SessionLocal()
-                try:
-                    # Find the corresponding resolved entity
-                    resolved_entity = db.query(ResolvedEntity).filter(
-                        ResolvedEntity.email == contact["email"]
-                    ).first()
-                    
-                    if resolved_entity:
-                        # Update outreach tracking
-                        if not hasattr(resolved_entity, 'outreach_history'):
-                            resolved_entity.outreach_history = []
-                        resolved_entity.outreach_history.append({
-                            "timestamp": time.time(),
-                            "type": "outreach",
-                            "status": "sent",
-                            "cluster_context": cluster_context
-                        })
-                        db.commit()
-                except Exception as e:
-                    logger.error(f"Error updating outreach history: {str(e)}")
-                finally:
-                    db.close()
+                # Note: ResolvedEntity doesn't have an outreach_history field
+                # In a real implementation, you would either:
+                # 1. Add an outreach_history column to ResolvedEntity model, or
+                # 2. Use a separate OutreachLog table to track outreach history
+                # For now, we'll skip this tracking
                 
                 return True
             else:
@@ -291,19 +274,22 @@ if __name__ == "__main__":
     async def main():
         # Create and run worker(s)
         workers = []
-        for i in range(args.concurrency):
+        tasks = []
+        for _ in range(args.concurrency):
             worker = OutreachWorker()
             workers.append(worker)
-            # Run each worker in a separate task
-            asyncio.create_task(worker.run())
-        
+            # Run each worker in a separate task and store the reference
+            task = asyncio.create_task(worker.run())
+            tasks.append(task)
+
         try:
-            # Keep the main task running
-            while True:
-                await asyncio.sleep(1)
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks, return_exceptions=True)
         except KeyboardInterrupt:
             logger.info("Shutting down workers...")
             for worker in workers:
                 worker.stop()
+            # Wait for tasks to complete gracefully
+            await asyncio.gather(*tasks, return_exceptions=True)
     
     asyncio.run(main())

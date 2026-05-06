@@ -9,6 +9,7 @@ import redis
 import os
 from typing import Dict, Any, Optional
 import hashlib
+import logging
 
 # Get Redis URL from environment, with fallback
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -45,8 +46,12 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
         # Create a fingerprint of the job to check if it's already been queued/completed
         fp = fingerprint(job)
         if seen_before(fp):
-            # Return the same job_id to avoid duplicates
-            return job["job_id"]  # Return existing job_id to avoid creating duplicate
+            existing_job_id = get_job_id_by_fingerprint(fp)
+            if existing_job_id:
+                return existing_job_id
+            logging.getLogger(__name__).warning(
+                f"Fingerprint seen but no job_id mapping found; fingerprint={fp}, job_type={job_type}; re-enqueueing"
+            )
     
     # Use a queue name based on the job type category
     queue_category = job_type.split(':')[0] if ':' in job_type else job_type
@@ -68,7 +73,7 @@ def enqueue_job(job_type: str, params: dict, source: str = "api", priority: int 
     
     # If dedupe_key is provided, mark this job as seen
     if dedupe_key:
-        mark_seen(fp)
+        mark_seen(fp, job["job_id"])
     
     return job["job_id"]
 
@@ -89,13 +94,30 @@ def seen_before(fp: str) -> bool:
     """
     Check if we've seen a job with this fingerprint before
     """
-    return r.sismember("job_fingerprints", fp)
+    # Use sorted set with timestamp scores for TTL-like behavior
+    return r.zscore("job_fingerprints", fp) is not None
 
-def mark_seen(fp: str):
+def mark_seen(fp: str, job_id: str = None):
     """
     Mark a job fingerprint as seen
     """
-    r.sadd("job_fingerprints", fp)
+    # Store with timestamp score, allowing cleanup of old entries
+    r.zadd("job_fingerprints", {fp: datetime.utcnow().timestamp()})
+    # Also store the mapping between fingerprint and job_id if provided
+    if job_id:
+        r.set(f"fingerprint_to_job_id:{fp}", job_id)
+
+def cleanup_old_fingerprints(days_to_keep: int = 30):
+    """Remove fingerprints older than specified days"""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.utcnow() - timedelta(days=days_to_keep)).timestamp()
+    r.zremrangebyscore("job_fingerprints", "-inf", cutoff)
+
+def get_job_id_by_fingerprint(fp: str) -> Optional[str]:
+    """
+    Get the job_id associated with a fingerprint
+    """
+    return r.get(f"fingerprint_to_job_id:{fp}")
 
 def get_job_status(job_id: str) -> Dict[str, Any]:
     """

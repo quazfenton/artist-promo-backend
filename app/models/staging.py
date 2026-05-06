@@ -1,11 +1,23 @@
 """Staging and graph models for the pipeline"""
 from sqlalchemy import Column, Integer, String, JSON, DateTime, Boolean, Float, ForeignKey, Index
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
+from typing import List
+from app.models.database import Base
 
-Base = declarative_base()
+
+class PipelineState(str, enum.Enum):
+    """States in the contact discovery pipeline"""
+    SCRAPED = "scraped"
+    NORMALIZED = "normalized"
+    CLUSTERED = "clustered"
+    SCORED = "scored"
+    VERIFIED = "verified"
+    READY_TO_SEND = "ready_to_send"
+    CONTACTED = "contacted"
+    FAILED = "failed"
+
 
 class ScraperRawSignal(Base):
     """Raw outputs of scrapers"""
@@ -17,12 +29,13 @@ class ScraperRawSignal(Base):
     payload = Column(JSON)             # raw scraper output
     dedupe_key = Column(String, index=True)  # For idempotency
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Index for faster querying
     __table_args__ = (
         Index('idx_scraper_raw_signals_platform', 'source_platform'),
         Index('idx_scraper_raw_signals_created', 'created_at'),
     )
+
 
 class StagingContact(Base):
     """Normalized, unresolved candidate contacts"""
@@ -41,10 +54,10 @@ class StagingContact(Base):
     source_url = Column(String)
     provenance = Column(JSON)           # source job, scraper info, traceability
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Relationship
     raw_signal = relationship("ScraperRawSignal", backref="staging_contacts")
-    
+
     # Indexes for performance
     __table_args__ = (
         Index('idx_staging_contacts_email', 'email'),
@@ -52,6 +65,7 @@ class StagingContact(Base):
         Index('idx_staging_contacts_type', 'contact_type'),
         Index('idx_staging_contacts_created', 'created_at'),
     )
+
 
 class ResolvedEntity(Base):
     """Merged canonical entities that map to main Contact table"""
@@ -70,17 +84,30 @@ class ResolvedEntity(Base):
     bio = Column(String)  # merged bio
     source_urls = Column(JSON)  # merged source URLs
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
+
+    # State tracking fields (ADDED for pipeline state machine)
+    pipeline_state = Column(String, default=PipelineState.SCRAPED.value, index=True)
+    state_history = Column(JSON, default=list)  # Track state transitions
+    quality_score = Column(Float, default=0.0)
+    outreach_ready = Column(Boolean, default=False)
+    last_verified_at = Column(DateTime)
+
     # Relationship to canonical contact
-    canonical_contact = relationship("Contact", backref="resolved_entities")
-    
+    canonical_contact = relationship("Contact", back_populates="resolved_entities")
+
+    # Relationship to evidence
+    evidence_items = relationship("Evidence", back_populates="entity", cascade="all, delete-orphan")
+
     # Indexes
     __table_args__ = (
         Index('idx_resolved_entities_merge_key', 'merge_key'),
         Index('idx_resolved_entities_canonical', 'canonical_contact_id'),
         Index('idx_resolved_entities_email', 'email'),
         Index('idx_resolved_entities_confidence', 'confidence_score'),
+        Index('idx_resolved_entities_state', 'pipeline_state'),  # Added for state tracking
+        Index('idx_resolved_entities_outreach_ready', 'outreach_ready'),  # Added for outreach filtering
     )
+
 
 class GraphNode(Base):
     """Nodes in the manager/artist/curator graph"""
@@ -92,15 +119,16 @@ class GraphNode(Base):
     name = Column(String)  # Node name
     properties = Column(JSON)  # Additional properties like follower count, genre, etc.
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Relationship
     entity = relationship("ResolvedEntity", backref="graph_nodes")
-    
+
     # Indexes
     __table_args__ = (
         Index('idx_graph_nodes_type', 'node_type'),
         Index('idx_graph_nodes_entity', 'entity_id'),
     )
+
 
 class GraphEdge(Base):
     """Edges between nodes with type and weight"""
@@ -112,17 +140,18 @@ class GraphEdge(Base):
     weight = Column(Integer, default=1)  # Relationship strength
     relation_type = Column(String)  # "represents", "follows", "manages", "collaborates", "plays_at"
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Relationships
     source_node = relationship("GraphNode", foreign_keys=[source_node_id], backref="outgoing_edges")
     target_node = relationship("GraphNode", foreign_keys=[target_node_id], backref="incoming_edges")
-    
+
     # Indexes
     __table_args__ = (
         Index('idx_graph_edges_source', 'source_node_id'),
         Index('idx_graph_edges_target', 'target_node_id'),
         Index('idx_graph_edges_relation', 'relation_type'),
     )
+
 
 class ClusterRun(Base):
     """Store cluster analysis results"""
@@ -134,12 +163,13 @@ class ClusterRun(Base):
     node_ids = Column(JSON)  # List of node IDs in this cluster
     cluster_properties = Column(JSON)  # Properties like influence score, member count, etc.
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Indexes
     __table_args__ = (
         Index('idx_cluster_runs_run_id', 'run_id'),
         Index('idx_cluster_runs_cluster', 'cluster_id'),
     )
+
 
 class JobTracker(Base):
     """Track job execution for idempotency and monitoring"""
@@ -154,10 +184,36 @@ class JobTracker(Base):
     error_message = Column(String)
     result = Column(JSON)  # Job result if successful
     created_at = Column(DateTime, server_default=func.now())
-    
+
     # Indexes
     __table_args__ = (
         Index('idx_job_tracker_job_id', 'job_id'),
         Index('idx_job_tracker_type', 'job_type'),
         Index('idx_job_tracker_status', 'status'),
+    )
+
+
+class Evidence(Base):
+    """Machine-auditable evidence trail for contact trust scoring"""
+    __tablename__ = "evidence"
+    
+    id = Column(Integer, primary_key=True)
+    entity_id = Column(Integer, ForeignKey("resolved_entities.id"), nullable=False, index=True)
+    email = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False)  # official_site, social_bio, mirror, whois, press_kit
+    signal = Column(String, nullable=False)  # bio_email, whois_email, link_in_bio, etc.
+    url = Column(String, nullable=False)
+    confidence = Column(Float, default=1.0)
+    metadata = Column(JSON)  # Additional context like screenshot_hash, page_title, etc.
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    entity = relationship("ResolvedEntity", back_populates="evidence_items")
+    
+    # Indexes for efficient querying
+    __table_args__ = (
+        Index('idx_evidence_entity', 'entity_id'),
+        Index('idx_evidence_email', 'email'),
+        Index('idx_evidence_source', 'source'),
+        Index('idx_evidence_created', 'created_at'),
     )

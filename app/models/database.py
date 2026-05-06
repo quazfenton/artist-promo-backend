@@ -60,47 +60,47 @@ class User(Base):
 class Contact(Base):
     """Main contacts table"""
     __tablename__ = "contacts"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Identity
     full_name = Column(String(255), nullable=True)
     username = Column(String(255), nullable=True)
     contact_type = Column(SQLEnum(ContactType), nullable=False)
-    
+
     # Contact Info
     email = Column(String(255), nullable=True, index=True)
     email_verified = Column(Boolean, default=False)
     phone = Column(String(50), nullable=True)
     website = Column(String(500), nullable=True)
-    
+
     # Social Handles
     instagram_handle = Column(String(255), nullable=True)
     twitter_handle = Column(String(255), nullable=True)
     linkedin_url = Column(String(500), nullable=True)
-    
+
     # Professional Details
     company = Column(String(255), nullable=True)
     title = Column(String(255), nullable=True)
     bio = Column(Text, nullable=True)
     genres = Column(JSON, nullable=True)  # ["hip-hop", "rap", "trap"]
-    
+
     # Metrics
     follower_count = Column(Integer, default=0)
     engagement_rate = Column(Float, default=0.0)
     response_rate = Column(Float, nullable=True)
-    
+
     # Scoring
     priority_score = Column(Float, default=0.0, index=True)
     llm_quality_score = Column(Float, nullable=True)
     match_score = Column(Float, nullable=True)
-    
+
     # Source & Verification
     source_platform = Column(SQLEnum(Platform), nullable=True)
     source_url = Column(String(500), nullable=True)
     verified = Column(Boolean, default=False)
     last_verified_at = Column(DateTime, nullable=True)
-    
+
     # Audit & Soft Delete
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -108,13 +108,14 @@ class Contact(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     last_active_at = Column(DateTime, nullable=True)
-    
+
     # Relationships
     playlists = relationship("Playlist", back_populates="curator")
     outreach_history = relationship("OutreachLog", back_populates="contact")
+    resolved_entities = relationship("ResolvedEntity", back_populates="canonical_contact")
     created_by_user = relationship("User", foreign_keys=[created_by])
     updated_by_user = relationship("User", foreign_keys=[updated_by])
-    
+
     # Indexes
     __table_args__ = (
         Index('idx_contact_type_score', 'contact_type', 'priority_score'),
@@ -246,7 +247,7 @@ class OutreachLog(Base):
     
     # Metadata
     n8n_execution_id = Column(String(255), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
     
     # Relationships
     contact = relationship("Contact", back_populates="outreach_history")
@@ -273,7 +274,7 @@ class ScraperRun(Base):
     
     # Logs
     error_log = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
 
 
 # ==================== VIEWS / MATERIALIZED QUERIES ====================

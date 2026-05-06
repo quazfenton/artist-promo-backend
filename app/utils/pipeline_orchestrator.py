@@ -46,33 +46,87 @@ class PipelineOrchestrator:
     
     def advance_state(self, record_id: int, new_state: PipelineState,
                      entity_type: str = "resolved_entity") -> bool:
-        """Advance a record to a new state"""
-        # We can't validate the transition without knowing the current state
-        # So we'll just proceed with the state update
+        """
+        Advance a record to a new state with validation
+        
+        Args:
+            record_id: ID of the record to update
+            new_state: Target pipeline state
+            entity_type: Type of entity (resolved_entity, contact, raw_signal)
+            
+        Returns:
+            True if state was advanced successfully, False otherwise
+        """
+        from loguru import logger
         
         db = SessionLocal()
         try:
             if entity_type == "resolved_entity":
                 entity = db.query(ResolvedEntity).filter(ResolvedEntity.id == record_id).first()
-                if entity:
-                    entity.last_updated = datetime.utcnow()
-                    # In a real system, you'd have a state field
-                    # For now, we'll just log the transition
-                    print(f"Advanced entity {record_id} to {new_state.value}")
-                    db.commit()  # Commit the changes
-                    return True
+                if not entity:
+                    logger.warning(f"Entity {record_id} not found")
+                    return False
+                
+                # Get current state
+                current_state_str = entity.pipeline_state or PipelineState.SCRAPED.value
+                try:
+                    current_state = PipelineState(current_state_str)
+                except ValueError:
+                    # Invalid state string, default to SCRAPED
+                    current_state = PipelineState.SCRAPED
+                
+                # Validate transition
+                if new_state not in self.state_transitions.get(current_state, []):
+                    logger.error(
+                        f"Invalid state transition from {current_state.value} to {new_state.value}",
+                        extra={"entity_id": record_id, "current_state": current_state.value, "new_state": new_state.value}
+                    )
+                    return False
+                
+                # Update state
+                old_state = entity.pipeline_state
+                entity.pipeline_state = new_state.value
+                
+                # Track in history
+                if not entity.state_history:
+                    entity.state_history = []
+                entity.state_history.append({
+                    "from": old_state,
+                    "to": new_state.value,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                
+                # Auto-set outreach_ready if reaching READY_TO_SEND
+                if new_state == PipelineState.READY_TO_SEND:
+                    entity.outreach_ready = True
+                
+                entity.last_updated = datetime.utcnow()
+                db.commit()
+                
+                logger.info(
+                    f"Advanced entity {record_id} from {old_state} to {new_state.value}",
+                    extra={"entity_id": record_id, "old_state": old_state, "new_state": new_state.value}
+                )
+                return True
+                
             elif entity_type == "contact":
                 contact = db.query(Contact).filter(Contact.id == record_id).first()
                 if contact:
                     contact.updated_at = datetime.utcnow()
-                    print(f"Advanced contact {record_id} to {new_state.value}")
-                    db.commit()  # Commit the changes
+                    db.commit()
+                    logger.info(f"Updated contact {record_id}")
                     return True
+                    
             elif entity_type == "raw_signal":
                 signal = db.query(ScraperRawSignal).filter(ScraperRawSignal.id == record_id).first()
                 if signal:
-                    print(f"Advanced raw signal {record_id} to {new_state.value}")
+                    logger.info(f"Processed raw signal {record_id}")
                     return True
+                    
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error advancing state for {record_id}: {str(e)}", exc_info=True)
+            return False
         finally:
             db.close()
         
@@ -88,40 +142,53 @@ class SignalNormalizer:
         """Convert raw signal to normalized staging contacts"""
         payload = raw_signal.payload or {}
         staging_contacts = []
-        
-        # Extract emails from various sources
-        emails = self._extract_emails_from_payload(payload)
-        
-        # Extract other contact info
-        name = payload.get('name') or payload.get('display_name') or payload.get('full_name')
-        bio = payload.get('bio') or payload.get('description')
-        follower_count = payload.get('follower_count', 0)
-        platform_ids = payload.get('platform_ids', {})
-        
-        # Create staging contacts for each email found
-        for email in emails:
-            staging_contact = StagingContact(
-                raw_signal_id=raw_signal.id,
-                name=name,
-                email=email,
-                contact_type=self._infer_contact_type(raw_signal.source_platform, bio),
-                social_handles=self._extract_social_handles(payload),
-                confidence_score=self._calculate_initial_confidence(email, follower_count),
-                platform_ids=platform_ids,
-                follower_count=follower_count,
-                bio=bio,
-                source_url=payload.get('source_url') or raw_signal.dedupe_key,
-                provenance={
-                    'job_id': raw_signal.job_id,
-                    'source_platform': raw_signal.source_platform,
-                    'raw_signal_id': raw_signal.id,
-                    'timestamp': datetime.utcnow().isoformat()
-                }
-            )
-            staging_contacts.append(staging_contact)
-        
+
+        for record in self._extract_signal_records(payload):
+            emails = self._extract_emails_from_payload(record)
+            if not emails:
+                continue
+
+            name = record.get('name') or record.get('display_name') or record.get('full_name')
+            bio = record.get('bio') or record.get('description')
+            follower_count = record.get('follower_count', 0)
+            platform_ids = record.get('platform_ids', {})
+            social_handles = self._extract_social_handles(record)
+            source_url = record.get('source_url') or record.get('url') or raw_signal.dedupe_key
+
+            for email in emails:
+                staging_contact = StagingContact(
+                    raw_signal_id=raw_signal.id,
+                    name=name,
+                    email=email,
+                    contact_type=self._infer_contact_type(raw_signal.source_platform, bio),
+                    social_handles=social_handles,
+                    confidence_score=self._calculate_initial_confidence(email, follower_count),
+                    platform_ids=platform_ids,
+                    follower_count=follower_count,
+                    bio=bio,
+                    source_url=source_url,
+                    provenance={
+                        'job_id': raw_signal.job_id,
+                        'source_platform': raw_signal.source_platform,
+                        'raw_signal_id': raw_signal.id,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                )
+                staging_contacts.append(staging_contact)
+
         return staging_contacts
-    
+
+    def _extract_signal_records(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract normalized records from raw payload structures."""
+        if not isinstance(payload, dict):
+            return []
+
+        results = payload.get('results')
+        if isinstance(results, list) and results:
+            return [item for item in results if isinstance(item, dict)]
+
+        return [payload]
+
     def _extract_emails_from_payload(self, payload: Dict[str, Any]) -> List[str]:
         """Extract emails from payload data"""
         import re
